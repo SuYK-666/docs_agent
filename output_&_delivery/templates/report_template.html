@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+      background: #f5f7fa;
+      color: #1f2937;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 1160px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+      overflow: hidden;
+      border: 1px solid #edf2f7;
+    }
+    .top-line {
+      height: 8px;
+      background: #c9082a;
+    }
+    .content {
+      padding: 28px 32px 36px;
+    }
+    h1 {
+      margin: 0;
+      text-align: center;
+      font-size: 32px;
+      letter-spacing: 0.5px;
+      color: #111827;
+    }
+    .meta {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    .badge {
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #fef2f2;
+      color: #9f1239;
+      border: 1px solid #fecaca;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .summary-box {
+      margin-top: 24px;
+      background: #fff7f9;
+      border-left: 6px solid #c9082a;
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .summary-title {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #9f1239;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .summary-line {
+      margin: 2px 0;
+      font-size: 15px;
+      color: #374151;
+    }
+    .hard-warning {
+      margin-top: 18px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-left: 6px solid #dc2626;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .hard-warning h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: #991b1b;
+    }
+    .hard-warning p {
+      margin: 4px 0;
+      font-size: 14px;
+      color: #7f1d1d;
+      word-break: break-all;
+    }
+    .section-title {
+      margin: 28px 0 14px;
+      font-size: 22px;
+      color: #111827;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 8px;
+    }
+    .task-list {
+      display: grid;
+      gap: 14px;
+    }
+    .task-card {
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      background: #ffffff;
+      padding: 14px 16px;
+      position: relative;
+      margin-bottom: 14px;
+    }
+    .task-card.red { border-left: 7px solid #dc2626; }
+    .task-card.yellow { border-left: 7px solid #f59e0b; }
+    .task-card.green { border-left: 7px solid #16a34a; }
+    .task-card.gray { border-left: 7px solid #6b7280; }
+    .task-layout {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .task-main-col {
+      width: 72%;
+      vertical-align: top;
+      padding-right: 14px;
+    }
+    .task-side-col {
+      width: 28%;
+      vertical-align: top;
+      border-left: 1px dashed #d1d5db;
+      padding-left: 14px;
+    }
+    .task-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .task-name {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+    }
+    .urgency-badge {
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f3f4f6;
+      color: #374151;
+      white-space: nowrap;
+    }
+    .urgency-badge.urgency-red {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    .urgency-badge.urgency-yellow {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
+    .urgency-badge.urgency-green {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+    .urgency-badge.urgency-gray {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    .task-detail {
+      margin-top: 8px;
+      color: #374151;
+      font-size: 14px;
+    }
+    .deliverables-title {
+      margin-top: 10px;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #4b5563;
+    }
+    .deliverables {
+      margin-top: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .deliverable-chip {
+      margin: 0;
+      color: #374151;
+      font-size: 13px;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 4px 8px;
+    }
+    .source-anchor {
+      margin-top: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f9fafb;
+      padding: 8px 10px;
+    }
+    .source-anchor-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+    }
+    .source-anchor-quote {
+      margin-top: 4px;
+      font-size: 13px;
+      color: #4b5563;
+    }
+    .task-meta-item {
+      margin: 4px 0;
+      font-size: 14px;
+      color: #374151;
+    }
+    .task-meta-key {
+      font-weight: 700;
+      color: #111827;
+    }
+    .calendar-cta {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1d4ed8;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .calendar-note {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .calendar-attachment {
+      margin-top: 18px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      color: #3730a3;
+      font-size: 13px;
+    }
+    .alert-area {
+      margin-top: 28px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-left: 6px solid #ea580c;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .alert-area.secondary {
+      margin-top: 12px;
+    }
+    .alert-area h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: #9a3412;
+    }
+    .alert-area ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .alert-area li {
+      margin: 4px 0;
+      font-size: 14px;
+      color: #7c2d12;
+    }
+    .alert-list p {
+      margin: 4px 0;
+      font-size: 14px;
+      color: #7c2d12;
+    }
+    @media (max-width: 900px) {
+      body { padding: 12px; }
+      .content { padding: 18px 16px 24px; }
+      h1 { font-size: 24px; }
+      .task-main-col,
+      .task-side-col {
+        width: 100%;
+        display: block;
+      }
+      .task-side-col {
+        border-left: 0;
+        border-top: 1px dashed #d1d5db;
+        padding-left: 0;
+        padding-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-line"></div>
+    <div class="content">
+      <h1>{{ title }}</h1>
+
+      <div class="meta">
+        <span class="badge">发文部门：{{ issuing_department }}</span>
+        <span class="badge">文号：{{ document_no }}</span>
+        <span class="badge">发布日期：{{ publish_date }}</span>
+        <span class="badge">类型：{{ doc_type }}</span>
+      </div>
+
+      <section class="summary-box">
+        <p class="summary-title">核心摘要</p>
+        {% for line in summary_lines %}
+        <p class="summary-line">{{ line }}</p>
+        {% endfor %}
+      </section>
+
+      {% if warning %}
+      <section class="hard-warning">
+        <h3>警告：抓取失败</h3>
+        <p>{{ warning }}</p>
+        {% if crawl_error_url %}<p>原链接：{{ crawl_error_url }}</p>{% endif %}
+        {% if crawl_error_reason %}<p>失败原因：{{ crawl_error_reason }}</p>{% endif %}
+      </section>
+      {% endif %}
+
+      <h2 class="section-title">任务清单</h2>
+      <section class="task-list">
+        {% for task in tasks_html %}
+        <article class="task-card {{ task.urgency.color }}">
+          <table class="task-layout" role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="task-main-col">
+                <div class="task-title-row">
+                  <h3 class="task-name">{{ task.task_name }}</h3>
+                  <span class="urgency-badge urgency-{{ task.urgency.color }}">{{ task.urgency.emoji }} {{ task.urgency.label }}</span>
+                </div>
+                <p class="task-detail">{{ task.action_suggestion }}</p>
+                {% if task.deliverables %}
+                <p class="deliverables-title">📑 需提交材料：</p>
+                <div class="deliverables">{% for item in task.deliverables %}<span class="deliverable-chip">{{ item }}</span>{% endfor %}</div>
+                {% endif %}
+                <div class="source-anchor">
+                  <div class="source-anchor-title">🔍 原文出处（{{ task.source_anchor.block_id }}）</div>
+                  <div class="source-anchor-quote">{{ task.source_anchor.quote }}</div>
+                </div>
+              </td>
+              <td class="task-side-col">
+                <p class="task-meta-item"><span class="task-meta-key">责任人：</span>{{ task.owner }}</p>
+                <p class="task-meta-item"><span class="task-meta-key">截止时间：</span>{{ task.deadline_display }}</p>
+                <p class="task-meta-item"><span class="task-meta-key">任务编号：</span>{{ task.task_id }}</p>
+                <span class="calendar-cta">📎 包含日历附件</span>
+                <p class="calendar-note">{{ calendar_hint }}</p>
+              </td>
+            </tr>
+          </table>
+        </article>
+        {% endfor %}
+        {% if not tasks_html %}
+        <article class="task-card gray">
+          <p class="task-detail">当前条目没有可执行任务。若本条为抓取失败告警，请优先人工核验原链接。</p>
+        </article>
+        {% endif %}
+      </section>
+
+      <div class="calendar-attachment" id="calendar-attachment">
+        日历附件：{{ calendar_attachment_name }}（.ics）
+      </div>
+
+      <section class="alert-area">
+        <h3>风险点</h3>
+        <div class="alert-list">{% if risks_or_unclear_points %}{% for risk in risks_or_unclear_points %}<p>{{ risk }}</p>{% endfor %}{% else %}<p>暂未识别到明显风险。</p>{% endif %}</div>
+      </section>
+
+      <section class="alert-area secondary">
+        <h3>跟进问题</h3>
+        <div class="alert-list">{% if follow_up_questions %}{% for question in follow_up_questions %}<p>{{ question }}</p>{% endfor %}{% else %}<p>暂无补充追问。</p>{% endif %}</div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

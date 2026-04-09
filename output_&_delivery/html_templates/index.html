@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>公文速阅智能中枢</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Source+Han+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <main class="page-shell">
+      <header class="hero card reveal delay-1">
+        <h1>公文速阅智能中枢</h1>
+        <p>一键提取核心指令，自动生成待办日程</p>
+      </header>
+
+      <section class="card reveal delay-2">
+        <div class="section-title">系统核心配置</div>
+        <div class="form-grid two-col">
+          <label class="field">
+            <span>模型厂商</span>
+            <select id="llmProvider">
+              <option value="deepseek">DeepSeek</option>
+              <option value="tongyi">阿里通义系列</option>
+              <option value="wenxin">百度文心系列</option>
+              <option value="gaoding">稿定设计</option>
+              <option value="modelwhale">和鲸ModelWhale</option>
+              <option value="jimeng">即梦</option>
+              <option value="doubao">豆包AI</option>
+              <option value="spark">科大讯飞星火</option>
+              <option value="kimi">Kimi</option>
+              <option value="hunyuan">腾讯混元系列</option>
+              <option value="zhipu">智谱AI</option>
+            </select>
+            <small class="hint">切换后可输入对应厂商的 API Key。</small>
+          </label>
+
+          <label class="field">
+            <span>模型调用秘钥 <em>*</em></span>
+            <div class="secret-wrap">
+              <input id="apiKey" type="password" placeholder="请输入 DeepSeek API Key" autocomplete="off" />
+              <button id="toggleApiKey" type="button" class="ghost-icon" aria-label="显示或隐藏秘钥">👁</button>
+            </div>
+            <small class="hint">秘钥仅保存在本浏览器本地，不会自动上传到其他站点。</small>
+          </label>
+        </div>
+      </section>
+
+      <section class="card reveal delay-3">
+        <div class="section-title">任务输入区</div>
+
+        <div class="tab-bar">
+          <button id="tabUpload" type="button" class="tab-btn active">文件上传</button>
+          <button id="tabPaste" type="button" class="tab-btn">快捷粘贴</button>
+          <button id="tabCrawl" type="button" class="tab-btn">全网抓取</button>
+        </div>
+
+        <div id="uploadPanel" class="tab-panel active">
+          <div id="dropZone" class="drop-zone" tabindex="0">
+            <input id="fileInput" type="file" multiple accept=".txt,.docx,.pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp" hidden />
+            <p class="drop-title">拖拽文件到此处，或点击选择文件</p>
+            <p class="drop-sub">支持 PDF、DOCX、TXT 及常见图片格式，可一次导入多份材料。</p>
+          </div>
+
+          <div class="queue-box">
+            <div class="queue-head">
+              <h3>待处理文件队列</h3>
+              <span id="queueCount" class="badge">0 份</span>
+            </div>
+            <ul id="fileQueue" class="queue-list"></ul>
+          </div>
+        </div>
+
+        <div id="pastePanel" class="tab-panel">
+          <label class="field">
+            <span>通知正文粘贴区</span>
+            <textarea id="pastedText" rows="12" placeholder="把领导在聊天工具里发来的原文直接粘贴到这里，系统会自动生成临时文本文件并进入同一解析流程。"></textarea>
+          </label>
+          <div class="paste-actions">
+            <label class="field paste-name-field">
+              <span>文本文件名（可选）</span>
+              <input id="pastedFileName" type="text" placeholder="例如：学院活动通知_原文.txt" />
+            </label>
+            <button id="savePastedTextBtn" type="button" class="secondary-btn">保存为 TXT 并加入队列</button>
+          </div>
+          <p class="hint">支持多次粘贴并分别保存；也可在文本框中直接粘贴剪贴板文件（如截图），与上传文件一起批量处理。</p>
+          <p class="hint">当前队列：<strong id="pasteQueueCount">0</strong> 份（含上传文件与已保存文本）。</p>
+        </div>
+
+        <div id="crawlPanel" class="tab-panel">
+          <div class="form-grid two-col">
+            <label class="field">
+              <span>抓取入口 URL <em>*</em></span>
+              <input id="crawlUrl" type="url" placeholder="例如：https://example.gov.cn/notice/list" />
+              <small class="hint">输入公告列表页或主题检索页地址，系统会按抓取策略进行提取。</small>
+            </label>
+
+            <label class="field">
+              <span>抓取条数 <em>*</em></span>
+              <input id="crawlCount" type="number" min="1" max="20" step="1" value="5" />
+              <small class="hint">建议 1-20 条，数值越大处理时长越高。</small>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>关键词过滤（可选）</span>
+            <input id="crawlKeyword" type="text" placeholder="例如：招生、竞赛、财务、采购" />
+          </label>
+          <p class="hint">本模式会把抓取参数作为独立任务提交，并在下方展示单文件粒度进度。</p>
+        </div>
+      </section>
+
+      <section class="card reveal delay-4">
+        <div class="section-title">执行控制与动作区</div>
+
+        <div class="mode-switch" id="modeSwitch">
+          <label class="mode-option active" data-mode="preview">
+            <input type="radio" name="runMode" value="preview" checked />
+            <div>
+              <strong>仅生成报告并在线预览</strong>
+              <p>速度较快，适合即时查阅。</p>
+            </div>
+          </label>
+
+          <label class="mode-option" data-mode="email">
+            <input type="radio" name="runMode" value="email" />
+            <div>
+              <strong>生成报告并自动发送邮件</strong>
+              <p>完成后自动打包并发送到目标邮箱。</p>
+            </div>
+          </label>
+        </div>
+
+        <div id="emailAttachmentPanel" class="mail-attachment-panel hidden">
+          <div class="mail-attachment-head">
+            <strong>邮件发送文件类型（至少选择一项）</strong>
+            <span id="emailTypeSummary" class="mail-attachment-summary">已选 4 项</span>
+          </div>
+          <div class="mail-attachment-grid">
+            <label class="mail-attachment-option selected">
+              <input type="checkbox" name="emailFileType" value="md" checked />
+              <span>Markdown 报告</span>
+              <select data-layout-for="md" class="layout-select" aria-label="Markdown 输出策略">
+                <option value="separate">逐文件</option>
+                <option value="bundle">汇总单份</option>
+              </select>
+            </label>
+            <label class="mail-attachment-option selected">
+              <input type="checkbox" name="emailFileType" value="html" checked />
+              <span>HTML 报告</span>
+              <select data-layout-for="html" class="layout-select" aria-label="HTML 输出策略">
+                <option value="separate">逐文件</option>
+                <option value="bundle">汇总单份</option>
+              </select>
+            </label>
+            <label class="mail-attachment-option selected">
+              <input type="checkbox" name="emailFileType" value="docx" checked />
+              <span>Word 报告</span>
+              <select data-layout-for="docx" class="layout-select" aria-label="Word 输出策略">
+                <option value="separate">逐文件</option>
+                <option value="bundle" selected>汇总单份</option>
+              </select>
+            </label>
+            <label class="mail-attachment-option selected">
+              <input type="checkbox" name="emailFileType" value="ics" checked />
+              <span>ICS 日历</span>
+              <small class="layout-tip">ICS 默认逐文件</small>
+            </label>
+          </div>
+        </div>
+
+        <p id="mailTypeError" class="field-error hidden">已选择自动发送邮件，请至少勾选一种发送文件类型。</p>
+
+        <button id="startBtn" class="start-btn" type="button" disabled>
+          <span class="label">开始智能解析</span>
+          <span class="spinner hidden"></span>
+        </button>
+        <p id="startGuardHint" class="hint start-guard-hint hidden"></p>
+      </section>
+
+      <section id="progressSection" class="card progress-card hidden reveal delay-5">
+        <div class="section-title">单文件细粒度进度</div>
+        <p class="hint">每个输入文件（或抓取项）都会显示独立进度条与步骤描述。</p>
+        <div id="fileProgressList" class="file-progress-list"></div>
+      </section>
+
+      <section id="thinkingSection" class="card thinking-card hidden reveal delay-5">
+        <div class="section-title">Thinking Engine 实时推演区</div>
+        <p class="hint">每个文件对应一个独立终端窗口，文本严格按 doc_id 分流，互不串台并并发打字。</p>
+        <div id="thinkingBoardGrid" class="thinking-grid"></div>
+      </section>
+
+      <section id="resultSection" class="card result-card hidden">
+        <div class="section-title">结果展示与沉淀区</div>
+
+        <div class="result-head">
+          <div>
+            <h3 id="resultTitle">在线报告阅览</h3>
+            <p id="resultMeta" class="hint">解析完成后，这里将展示可预览报告。</p>
+            <div id="bundleTools" class="bundle-tools hidden">
+              <span class="bundle-title">汇总下载：</span>
+              <button id="downloadBundleMdBtn" type="button">汇总 Markdown</button>
+              <button id="downloadBundleHtmlBtn" type="button">汇总 HTML</button>
+              <button id="downloadBundleDocxBtn" type="button">汇总 Word</button>
+            </div>
+          </div>
+          <div id="floatingTools" class="floating-tools hidden">
+            <button id="downloadHtmlBtn" type="button">下载网页版报告</button>
+            <button id="downloadMdBtn" type="button">下载纯文本排版报告</button>
+            <button id="downloadDocxBtn" type="button">下载Word报告</button>
+            <button id="downloadIcsBtn" type="button">下载日历日程附件</button>
+          </div>
+        </div>
+
+        <div id="reportTabs" class="report-tabs"></div>
+
+        <div class="iframe-wrap">
+          <iframe id="previewFrame" title="报告预览区"></iframe>
+        </div>
+      </section>
+
+      <section id="approvalSection" class="card hidden">
+        <div class="section-title">人工校核与确认区</div>
+        <p id="approvalHint" class="hint">请逐条核对并可直接修改责任人、截止日期；下方填写下发邮箱后再确认执行。</p>
+        <div id="approvalDocs" class="approval-docs"></div>
+        <div id="approvalEmailPanel" class="approval-email-panel hidden">
+          <div class="approval-email-head">
+            <strong>下发邮箱（必填，可多个）</strong>
+            <div class="approval-email-toolbar">
+              <button id="addRecipientBtn" type="button" class="approval-email-btn">添加邮箱</button>
+              <button id="removeRecipientBtn" type="button" class="approval-email-btn">删除邮箱</button>
+            </div>
+          </div>
+          <p class="hint">一行一个邮箱地址，可增减行；未填写有效邮箱时不可点击确认。</p>
+          <div id="approvalEmailRows" class="approval-email-rows"></div>
+          <p id="approvalEmailError" class="field-error hidden">请至少填写一个有效邮箱后再确认。</p>
+        </div>
+        <div class="approval-actions">
+          <button id="approveBtn" type="button" class="start-btn">确认无误，下发</button>
+        </div>
+      </section>
+    </main>
+
+    <div id="toastArea" class="toast-area"></div>
+    <div id="stickyNotice" class="sticky-notice hidden">
+      <div class="sticky-main">
+        <strong id="stickyNoticeTitle">投递状态</strong>
+        <span id="stickyNoticeText">-</span>
+      </div>
+      <button id="stickyNoticeClose" type="button" aria-label="关闭提示">关闭</button>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

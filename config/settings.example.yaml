@@ -1,0 +1,193 @@
+app:
+  environment: dev
+  timezone: Asia/Shanghai
+  log_level: INFO
+  max_parallel_docs: 10
+  max_parallel_tasks: 10
+
+paths:
+  raw_docs_dir: data_workspace/raw_docs
+  processed_cache_dir: data_workspace/processed_cache
+  rag_db_dir: data_workspace/rag_db
+  final_reports_dir: data_workspace/final_reports
+
+spiders:
+  enabled: false
+  auto_run: false
+  default_site: sample_notice_site
+  timeout_seconds: 20
+  verify_ssl: false
+  force_encoding: ""
+  history_file: data_workspace/history_urls.json
+  retry:
+    max_retries: 3
+    backoff_base_seconds: 2
+  humanize:
+    sleep_min_seconds: 1.5
+    sleep_max_seconds: 3.5
+    user_agents: []
+  playwright:
+    headless: true
+    browser_channel: ""
+    wait_network_idle: true
+    wait_selector_timeout_seconds: 15
+  auth:
+    storage_state_file: data_workspace/cookies/spider_state.json
+    allow_manual_login: false
+    manual_login_timeout_seconds: 120
+    login_url_keywords: ["login", "cas", "oauth", "sso"]
+    login_title_keywords: ["登录", "统一身份认证", "身份认证", "扫码"]
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+  sites:
+    sample_notice_site:
+      list_url: https://example.edu.cn/notice
+      list_selector: .news-list li a
+      title_selector: .article-title
+      content_selector: .article-content
+      attachment_selector: a[href$='.pdf'], a[href$='.doc'], a[href$='.docx'], a[href$='.xls'], a[href$='.xlsx']
+
+rag:
+  enabled: true
+  top_k: 3
+  similarity_threshold: 0.75
+  query_text_chars: 1000
+  collection_name: docs_agent_archive
+  embedding_model: BAAI/bge-small-zh
+  fallback_enabled: true
+  metadata_json_max_chars: 0
+  dynamic_threshold:
+    enabled: true
+    short_query_chars: 320
+    long_query_chars: 1200
+    short_query_bonus: 0.05
+    long_query_penalty: 0.03
+    min: 0.70
+    max: 0.90
+
+logging:
+  dir: log
+  config_file: log/logging.yaml
+  file: ""
+
+deepseek:
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+  api_key_env: DEEPSEEK_API_KEY
+  timeout_seconds: 60
+  max_retries: 4
+  backoff_base_seconds: 2
+  temperature: 0
+  top_p: 1
+  max_output_tokens: 1500
+  request_json_mode: true
+
+reader:
+  summary_target_words: 250
+  json_retry_times: 3
+  max_output_tokens: 2600
+  include_source_anchors: true
+
+reviewer:
+  json_retry_times: 2
+  max_output_tokens: 2600
+
+critic:
+  enabled: true
+  score_threshold: 85
+  max_rework_loops: 3
+  json_retry_times: 2
+  max_output_tokens: 1800
+
+dispatcher:
+  json_retry_times: 1
+
+orchestrator:
+  enable_reviewer: true
+  enable_dispatcher: true
+  generate_calendar: true
+
+security_filter:
+  enabled: true
+
+urgency:
+  high_threshold: 70
+  medium_threshold: 40
+
+calendar:
+  calendar_name: 公文任务日程
+  save_to_final_reports: true
+
+email:
+  enabled: true
+  smtp_server: "smtp.163.com"
+  smtp_port: 465
+  sender_email: "your_sender@example.com"
+  sender_name: "公文速阅智能体"
+  auth_code: "YOUR_SMTP_AUTH_CODE"
+  timeout_seconds: 30
+
+contacts:
+  "各学院": "target_email_1@xxx.com"
+  "各部门": "target_email_2@xxx.com"
+  "默认": "your_test_email@xxx.com"
+
+ingestion:
+  router:
+    pdf_mode: auto
+    pdf_text_page_ratio_threshold: 0.6
+    pdf_text_total_chars_threshold: 180
+
+  ocr:
+    lang: ch
+    use_angle_cls: true
+    dpi: 240
+    engine: rapid
+    allow_fallback: true
+
+  # VLM-assisted OCR is integrated into main ingestion flow.
+  # It reuses the same selected LLM provider and API key; no extra key is required.
+  vlm_assist:
+    enabled: true
+    max_parallel_pages: 2
+    max_output_tokens: 2400
+    temperature: 0
+    default_model: ""
+    providers:
+      tongyi:
+        model: qwen-vl-max
+      wenxin:
+        model: ernie-4.5-vl-32k
+      doubao:
+        model: doubao-vision-pro-32k
+      zhipu:
+        model: glm-4v-plus
+
+  layout:
+    score_threshold: 0.35
+    top_right_filter: true
+    top_region_ratio: 0.18
+    right_region_ratio: 0.62
+    header_keywords:
+      - 机密
+      - 秘密
+      - 绝密
+      - 签发
+      - 发文字号
+      - 编号
+      - 红头
+    stamp_filter: true
+    stamp_keywords:
+      - 公章
+      - 印
+      - 章
+    stamp_noise_keywords:
+      - 仅供内部留存
+      - 内部留存
+      - 仅供
+      - 作废
+    two_column_min_blocks: 8
+    two_column_min_each_side: 3
+    two_column_gap_ratio: 0.22
+    merge_line_gap_ratio: 1.45
+    merge_x_tolerance_ratio: 0.10

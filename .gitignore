@@ -1,0 +1,39 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime data
+log/*.log
+data_workspace/**
+!data_workspace/.gitkeep
+!data_workspace/raw_docs/.gitkeep
+!data_workspace/processed_cache/.gitkeep
+!data_workspace/rag_db/.gitkeep
+!data_workspace/final_reports/.gitkeep
+
+# Local override config
+config/settings.local.yaml
+config/settings.local.yml
+
+# OS files
+.DS_Store
+Thumbs.db

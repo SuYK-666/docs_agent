@@ -993,8 +993,8 @@ print(result)
 
 安全策略与私下漏洞报告方式见 [SECURITY.md](SECURITY.md)。
 
-### 19.4 贡献者头像
+### Contributors
 
-[![Contributors](https://contrib.rocks/image?repo=SuYK-666/docs_agent)](https://github.com/SuYK-666/docs_agent/graphs/contributors)
+[![Contributors](./contributors.svg)](https://github.com/SuYK-666/docs_agent/graphs/contributors)
 
 Issue/PR 模板已内置在 [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE) 与 [.github/pull_request_template.md](.github/pull_request_template.md)，可直接启用。

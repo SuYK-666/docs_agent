@@ -259,6 +259,16 @@ function renderRecipientRows() {
 
 function validateApprovalRecipients(showError = false) {
   const locked = Boolean(state.approvalLocked);
+  
+  // 如果是预览模式，直接允许点击（只要没锁定）
+  if (state.mode === "preview") {
+    const canApprove = !locked;
+    if (el.approveBtn) el.approveBtn.disabled = !canApprove;
+    if (el.approvalEmailError) el.approvalEmailError.classList.add("hidden");
+    return canApprove;
+  }
+
+  // 以下是邮件模式的原有逻辑
   const { valid, invalid } = getRecipientValidation();
   const hasValid = valid.length > 0;
   const noInvalid = invalid.length === 0;
@@ -342,22 +352,34 @@ function updateDraftTaskField(draftToken, taskId, field, value) {
 }
 
 function renderApprovalSection() {
+  // 1. 在函数顶部统一定义一次变量
+  const locked = Boolean(state.approvalLocked);
+
+  // 2. 根据状态和模式更新按钮文字
+  if (el.approveBtn) {
+    if (locked) {
+      el.approveBtn.textContent = "已确认（只读）";
+    } else {
+      // 预览模式显示“完成解析”，邮件模式显示“下发”
+      el.approveBtn.textContent = state.mode === "email" ? "确认无误，下发" : "确认无误，完成解析";
+    }
+  }
+
+  // 3. 更新提示文案
+  if (el.approvalHint) {
+    el.approvalHint.textContent = locked
+      ? "人工审核已完成，以下为确认后的只读留痕记录。"
+      : "请逐条核对并可直接修改责任人、截止日期；下方填写下发邮箱后再确认执行。";
+  }
+
+  // 4. 清空并检查草稿数据
   el.approvalDocs.innerHTML = "";
   if (!state.drafts.length) {
     hideApprovalSection();
     return;
   }
 
-  const locked = Boolean(state.approvalLocked);
-  if (el.approvalHint) {
-    el.approvalHint.textContent = locked
-      ? "人工审核已完成，以下为确认后的只读留痕记录。"
-      : "请逐条核对并可直接修改责任人、截止日期；下方填写下发邮箱后再确认执行。";
-  }
-  if (el.approveBtn) {
-    el.approveBtn.textContent = locked ? "已确认下发（只读）" : "确认无误，下发";
-  }
-
+  // 5. 渲染表格（保持你原来的逻辑）
   state.drafts.forEach((draft) => {
     const card = document.createElement("article");
     card.className = `approval-card ${locked ? "approved" : ""}`;
@@ -426,11 +448,19 @@ function renderApprovalSection() {
     el.approvalDocs.appendChild(card);
   });
 
+  // 6. 邮件面板控制
   if (el.approvalEmailPanel) {
-    el.approvalEmailPanel.classList.remove("hidden");
+    if (state.mode === "email") {
+      el.approvalEmailPanel.classList.remove("hidden");
+    } else {
+      el.approvalEmailPanel.classList.add("hidden");
+    }
   }
+
   renderRecipientRows();
   validateApprovalRecipients(false);
+
+  // 7. 最后：移除 hidden 属性，显示主面板
   el.approvalSection.classList.remove("hidden");
 }
 
@@ -2210,7 +2240,9 @@ function buildFormData() {
   const fd = new FormData();
   fd.append("llm_provider", el.llmProvider.value);
   fd.append("api_key", el.apiKey.value.trim());
-  fd.append("mode", state.mode);
+  // 修改为（直接抓取当前选中的 radio 值）：
+  const activeMode = document.querySelector('input[name="runMode"]:checked').value;
+  fd.append("mode", activeMode);
   fd.append("input_tab", state.activeInputTab);
   fd.append("email_file_types", getSelectedEmailFileTypes().join(","));
 
@@ -2248,6 +2280,7 @@ function buildFormData() {
 }
 
 async function submitJob() {
+  state.mode = document.querySelector('input[name="runMode"]:checked').value;
   if (state.activeInputTab === "paste" && el.pastedText.value.trim()) {
     addPastedTextToQueue({ silent: true, clearInput: true });
   }
@@ -2371,7 +2404,7 @@ async function submitApproval() {
   updateFileProgress(FILE_PROGRESS_FALLBACK_ID, {
     fileName: "总体任务",
     percent: 86,
-    detail: "审批已提交，正在执行下发...",
+    detail: state.mode === "email" ? "审批已提交，正在执行下发..." : "审批已提交，正在完成解析...",
     status: "running",
   });
 

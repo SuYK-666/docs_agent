@@ -870,4 +870,3 @@ if __name__ == "__main__":
 			crawler_force=args.crawl_force,
 			send_email=args.send_email,
 		)
-

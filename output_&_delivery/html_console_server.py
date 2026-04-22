@@ -1690,24 +1690,35 @@ async def _process_single_approved_item(
 
 
 async def _execute_approval_job_async(job_id: str, modified_drafts: list[dict[str, Any]], recipient_emails: list[str]) -> None:
+    # 1. 必须在所有逻辑开始前，先获取并验证 job 实例
+    current_job = _get_job(job_id)
+    if not current_job:
+        return
+
+    # 2. 现在可以安全定义模式相关的文案变量
+    is_email = (current_job.mode == "email")
+    step_desc = "正在执行下发..." if is_email else "正在完成最终解析..."
+    msg_desc = "正在生成日历并准备发送邮件..." if is_email else "正在固化任务数据并生成最终产物..."
+
+    # 3. 执行第一次状态更新
     _update_job(
         job_id,
         status="running",
         progress=84,
         step_index=4,
-        step_text="已接收人工确认，正在执行下发...",
+        step_text=f"已接收人工确认，{step_desc}",
         file_id="__job__",
         file_name="总体任务",
         file_percent=84,
-        step_detail="审批已提交，正在执行下发...",
-        message="正在生成日历、分发内容并准备发送邮件...",
+        step_detail=f"审批已提交，{step_desc}",
+        message=msg_desc,
     )
 
     with RUN_LOCK:
         log_file = _prepare_logger_for_job()
         _update_job(job_id, log_file=log_file)
 
-        current_job = _get_job(job_id)
+        job_root = UI_JOB_ROOT / job_id
         if current_job is None:
             raise RuntimeError("job not found during approval stage")
 
@@ -1829,7 +1840,7 @@ async def _execute_approval_job_async(job_id: str, modified_drafts: list[dict[st
                 "attachment_count": attachment_count,
                 "results": send_results,
             }
-
+        final_msg = "人工确认后的任务已完成下发。" if current_job.mode == "email" else "人工确认完成，最终产物已就绪。"
         _update_job(
             job_id,
             status="success",
@@ -1840,7 +1851,7 @@ async def _execute_approval_job_async(job_id: str, modified_drafts: list[dict[st
             file_name="总体任务",
             file_percent=100,
             step_detail="人工确认后的任务已全部完成",
-            message="人工确认后的任务已完成下发。",
+            message=final_msg,
             reports=reports,
             bundle_reports=bundle_reports,
             drafts=approved_drafts_locked,
@@ -2161,8 +2172,13 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
         if not isinstance(drafts, list) or not drafts:
             self._send_json({"error": "drafts is required and must be a non-empty array"}, status=HTTPStatus.BAD_REQUEST)
             return
-        if not recipient_emails:
-            self._send_json({"error": "recipient_emails is required and must contain valid email(s)"}, status=HTTPStatus.BAD_REQUEST)
+        # 修改后（增加 job.mode 判断）：
+        job = _get_job(job_id)
+        if job and job.mode == "email" and not recipient_emails:
+            self._send_json({
+                "error": "recipient_emails is required and must contain valid email(s)",
+                "error_code": "missing_recipient_emails",
+            }, status=HTTPStatus.BAD_REQUEST)
             return
 
         job = _get_job(job_id)

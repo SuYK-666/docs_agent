@@ -72,17 +72,27 @@ logging:
   config_file: log/logging.yaml
   file: ""
 
-deepseek:
-  base_url: https://api.deepseek.com
-  model: deepseek-chat
-  api_key_env: DEEPSEEK_API_KEY
-  timeout_seconds: 60
-  max_retries: 4
-  backoff_base_seconds: 2
-  temperature: 0
-  top_p: 1
-  max_output_tokens: 1500
-  request_json_mode: true
+# deepseek:
+#   base_url: https://api.deepseek.com
+#   model: deepseek-chat
+#   api_key_env: DEEPSEEK_API_KEY
+#   timeout_seconds: 60
+#   max_retries: 4
+#   backoff_base_seconds: 2
+#   temperature: 0
+#   top_p: 1
+#   max_output_tokens: 1500
+#   request_json_mode: true
+# --- 替换为你复制的这段 ---
+llm:
+  provider: tongyi
+  providers:
+    tongyi:
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model: qwen-plus-2025-07-14
+      request_json_mode: true
+      timeout_seconds: 60
+      max_output_tokens: 1500
 
 reader:
   summary_target_words: 250
@@ -122,11 +132,11 @@ calendar:
 
 email:
   enabled: true
-  smtp_server: "smtp.163.com"
+  smtp_server: "smtp.qq.com"
   smtp_port: 465
-  sender_email: "your_sender@example.com"
+  sender_email: "1774006384@qq.com"
   sender_name: "公文速阅智能体"
-  auth_code: "YOUR_SMTP_AUTH_CODE"
+  auth_code: "xdtjungwkcjrbbdf"
   timeout_seconds: 30
 
 contacts:

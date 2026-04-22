@@ -1,5 +1,9 @@
 import type { JobStatusData, JobStreamMessage } from '@/hooks/useJobMonitor'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+
+export interface ThinkingConsoleHandle {
+  clearLogs: () => void
+}
 
 interface ThinkingConsoleProps {
   logs: JobStreamMessage[]
@@ -7,9 +11,11 @@ interface ThinkingConsoleProps {
   currentJobId?: string
   error?: string | null
   isDesensitized?: boolean
+  autoScroll?: boolean
 }
 
 type SystemLogType = 'info' | 'success' | 'warning' | 'error'
+type StageKey = 'reader' | 'reviewer' | 'dispatcher'
 
 type SystemLog = {
   id: string
@@ -18,8 +24,6 @@ type SystemLog = {
   content: string
   type: SystemLogType
 }
-
-type StageKey = 'reader' | 'reviewer' | 'dispatcher'
 
 type GroupedStageLogs = Record<StageKey, JobStreamMessage[]>
 
@@ -53,14 +57,30 @@ function mapAgentToStage(agent: string): StageKey {
   return 'reader'
 }
 
-function getAgentColor(agent: string) {
-  const normalized = String(agent).toLowerCase()
-  if (normalized === 'reader') return 'text-blue-400'
-  if (normalized === 'dispatcher') return 'text-emerald-400'
-  if (normalized === 'critic') return 'text-amber-400'
-  if (normalized === 'reviewer') return 'text-slate-400'
-  if (normalized === 'system') return 'text-slate-400'
-  return 'text-slate-400'
+function createEmptyStageLogs(): GroupedStageLogs {
+  return {
+    reader: [],
+    reviewer: [],
+    dispatcher: [],
+  }
+}
+
+function nowTimeString() {
+  const now = new Date()
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+}
+
+function formatText(text: string, isDesensitized: boolean) {
+  if (!isDesensitized || !text) return text
+
+  let safeText = String(text)
+  safeText = safeText.replace(/(\d{3})\d{4}(\d{4})/g, '$1****$2')
+  safeText = safeText.replace(/(\d{6})\d{8}(\d{4}|\d{3}[Xx])/g, '$1********$2')
+  safeText = safeText.replace(
+    /\b([A-Za-z0-9._%+-])([A-Za-z0-9._%+-]*)(@[\w.-]+\.[A-Za-z]{2,})\b/g,
+    (_, first, middle, domain) => first + '*'.repeat(String(middle).length) + domain,
+  )
+  return safeText
 }
 
 function getLogColor(type: string) {
@@ -70,46 +90,92 @@ function getLogColor(type: string) {
   return 'text-slate-300'
 }
 
-function formatText(text: string, isDesensitized: boolean) {
-  if (!isDesensitized || !text) return text
+function getAgentBadgeMeta(agent: string) {
+  const normalized = String(agent).toLowerCase()
 
-  let safeText = String(text)
-  safeText = safeText.replace(/(\d{3})\d{4}(\d{4})/g, '$1****$2')
-  safeText = safeText.replace(/(\d{6})\d{8}(\d{4}|\d{3}[Xx])/g, '$1********$2')
-  safeText = safeText.replace(/(^.)(.*)(?=@)/g, (_, first, rest) => first + '*'.repeat(rest.length))
-  return safeText
-}
+  if (normalized === 'reader') return { label: '[REA]', badgeColor: 'text-blue-400', contentColor: 'text-blue-400' }
+  if (normalized === 'reviewer') return { label: '[REV]', badgeColor: 'text-purple-400', contentColor: 'text-slate-300' }
+  if (normalized === 'critic') return { label: '[CRI]', badgeColor: 'text-amber-400', contentColor: 'text-amber-400' }
+  if (normalized === 'dispatcher') return { label: '[DIS]', badgeColor: 'text-emerald-400', contentColor: 'text-emerald-400' }
+  if (normalized === 'system') return { label: '[SYSTEM]', badgeColor: 'text-slate-300', contentColor: 'text-slate-300' }
+  if (normalized === 'email') return { label: '[MAIL]', badgeColor: 'text-emerald-400', contentColor: 'text-emerald-400' }
 
-function nowTimeString() {
-  const now = new Date()
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-}
-
-function createEmptyStageLogs(): GroupedStageLogs {
   return {
-    reader: [],
-    reviewer: [],
-    dispatcher: [],
+    label: `[${String(agent || 'LOG').slice(0, 6).toUpperCase()}]`,
+    badgeColor: 'text-slate-400',
+    contentColor: 'text-slate-300',
   }
 }
 
-export default function ThinkingConsole({
-  logs,
-  jobStatus,
-  currentJobId,
-  error,
-  isDesensitized = false,
-}: ThinkingConsoleProps) {
+function extractInlinePrefix(content: string) {
+  const match = String(content).match(/^\s*(\[[A-Z_]{2,12}\])\s*(.*)$/s)
+  if (!match) return null
+
+  return {
+    prefix: match[1],
+    body: match[2] || '',
+  }
+}
+
+function getPrefixColor(prefix: string) {
+  if (prefix === '[SYSTEM]') return 'text-slate-300'
+  if (prefix === '[REA]' || prefix === '[READER]') return 'text-blue-400'
+  if (prefix === '[REV]' || prefix === '[REVIEWER]') return 'text-purple-400'
+  if (prefix === '[CRI]' || prefix === '[CRITIC]') return 'text-amber-400'
+  if (prefix === '[DIS]' || prefix === '[DISPATCHER]' || prefix === '[MAIL]') return 'text-emerald-400'
+  if (prefix === '[ERR]' || prefix === '[ERROR]') return 'text-red-400'
+  return 'text-slate-400'
+}
+
+function parseLogParts(time: string, agent: string, content: string) {
+  const inlinePrefix = extractInlinePrefix(content)
+  const resolvedLabel = inlinePrefix ? inlinePrefix.prefix : getAgentBadgeMeta(agent).label
+  const badgeColor = inlinePrefix ? getPrefixColor(inlinePrefix.prefix) : getAgentBadgeMeta(agent).badgeColor
+  const body = inlinePrefix ? inlinePrefix.body : content
+
+  return {
+    timeLabel: `[${time}]`,
+    label: resolvedLabel,
+    badgeColor,
+    body,
+  }
+}
+
+const ThinkingConsole = forwardRef<ThinkingConsoleHandle, ThinkingConsoleProps>(function ThinkingConsole(
+  {
+    logs,
+    jobStatus,
+    currentJobId,
+    error,
+    isDesensitized = false,
+    autoScroll = true,
+  },
+  ref,
+) {
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([])
+  const [clearedAfterId, setClearedAfterId] = useState(-1)
   const systemScrollRef = useRef<HTMLDivElement | null>(null)
   const stageScrollRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const previousJobIdRef = useRef<string>('')
+  const previousJobIdRef = useRef('')
   const previousJobStatusRef = useRef<JobStatusData['jobStatus']>('idle')
   const previousErrorRef = useRef<string | null>(null)
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      clearLogs() {
+        setSystemLogs([])
+        setClearedAfterId(logs.length > 0 ? Math.max(...logs.map((log) => log.id)) : -1)
+      },
+    }),
+    [logs],
+  )
+
+  const visibleLogs = useMemo(() => logs.filter((log) => log.id > clearedAfterId), [clearedAfterId, logs])
+
   const groupedFileLogs = useMemo(() => {
-    return logs.reduce<Record<string, GroupedStageLogs>>((accumulator, log) => {
-      if (!log.fileName || log.fileName === 'Global' || log.agent === 'System') return accumulator
+    return visibleLogs.reduce<Record<string, GroupedStageLogs>>((accumulator, log) => {
+      if (!log.fileName || log.fileName === 'Global') return accumulator
 
       if (!accumulator[log.fileName]) {
         accumulator[log.fileName] = createEmptyStageLogs()
@@ -118,7 +184,7 @@ export default function ThinkingConsole({
       accumulator[log.fileName][mapAgentToStage(log.agent)].push(log)
       return accumulator
     }, {})
-  }, [logs])
+  }, [visibleLogs])
 
   const statusMeta = statusMap[jobStatus]
 
@@ -145,10 +211,21 @@ export default function ThinkingConsole({
   useEffect(() => {
     if (previousJobStatusRef.current === jobStatus) return
 
-    if (jobStatus === 'uploading') pushSystemLog('System', '安全通道已建立，开始接收流式处理日志。', 'info')
-    if (jobStatus === 'pending_approval') pushSystemLog('System', '系统进入待审批状态，请核验草稿后继续。', 'warning')
-    if (jobStatus === 'success') pushSystemLog('System', '任务全部执行完毕，结果已经写回工作台。', 'success')
-    if (jobStatus === 'failed') pushSystemLog('System', '任务执行失败，请检查接口响应与任务参数。', 'error')
+    if (jobStatus === 'uploading') {
+      pushSystemLog('System', '安全通道已建立，开始接收流式处理日志。', 'info')
+    }
+
+    if (jobStatus === 'pending_approval') {
+      pushSystemLog('System', '系统进入待审批状态，请核验草稿后继续。', 'warning')
+    }
+
+    if (jobStatus === 'success') {
+      pushSystemLog('System', '任务全部执行完毕，结果已写回工作台。', 'success')
+    }
+
+    if (jobStatus === 'failed') {
+      pushSystemLog('System', '任务执行失败，请检查接口响应与任务参数。', 'error')
+    }
 
     previousJobStatusRef.current = jobStatus
   }, [jobStatus])
@@ -160,27 +237,46 @@ export default function ThinkingConsole({
   }, [error])
 
   useEffect(() => {
-    if (systemScrollRef.current) {
-      systemScrollRef.current.scrollTop = systemScrollRef.current.scrollHeight
-    }
-  }, [systemLogs])
+    if (!autoScroll || !systemScrollRef.current) return
+    systemScrollRef.current.scrollTop = systemScrollRef.current.scrollHeight
+  }, [autoScroll, systemLogs])
 
   useEffect(() => {
+    if (!autoScroll) return
+
     Object.values(stageScrollRefs.current).forEach((element) => {
       if (!element) return
       element.scrollTop = element.scrollHeight
     })
-  }, [logs])
+  }, [autoScroll, visibleLogs])
 
   const renderContent = (content: string, colorClass: string) => {
     const safeText = formatText(content, isDesensitized)
-    const isBlock = safeText.includes('\n') || /^[\[{]/.test(safeText.trim())
+    return (
+      <pre className={`min-w-0 flex-1 whitespace-pre-wrap break-all text-[15px] leading-7 ${colorClass}`}>
+        {safeText}
+      </pre>
+    )
+  }
 
-    if (isBlock) {
-      return <pre className={`${colorClass} max-w-full whitespace-pre-wrap break-all`}>{safeText}</pre>
-    }
+  const renderLogLine = (
+    time: string,
+    agent: string,
+    content: string,
+    toneClass: string,
+    key: string | number,
+  ) => {
+    const logParts = parseLogParts(time, agent, content)
 
-    return <span className={`flex-1 whitespace-pre-wrap break-all ${colorClass}`}>{safeText}</span>
+    return (
+      <div key={key} className="mb-3 flex flex-col rounded px-1 py-1 transition-colors hover:bg-slate-800/30">
+        <span className="mb-1 block w-full text-[12px] tabular-nums text-slate-500">{logParts.timeLabel}</span>
+        <div className="flex min-w-0 items-start gap-2">
+          <span className={`shrink-0 font-bold text-[13px] ${logParts.badgeColor}`}>{logParts.label}</span>
+          {renderContent(logParts.body, toneClass)}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -196,6 +292,7 @@ export default function ThinkingConsole({
             root@docs-agent-core:~/pipeline_monitor
           </span>
         </div>
+
         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
           {statusMeta.spinning && <span className="animate-spin text-slate-300">↻</span>}
           <span className={`transition-colors duration-300 ${statusMeta.color}`}>{statusMeta.text}</span>
@@ -208,14 +305,8 @@ export default function ThinkingConsole({
             <div className="flex items-center gap-2 border-b border-slate-700/50 bg-slate-800/80 px-3 py-2 text-[10px] font-bold text-slate-400">
               <span>System Kernel (全局调度)</span>
             </div>
-            <div ref={systemScrollRef} className="flex-1 overflow-y-auto p-2 text-[11px] leading-relaxed">
-              {systemLogs.map((log) => (
-                <div key={log.id} className="mb-1 flex items-start rounded px-1 py-0.5 transition-colors hover:bg-slate-800/30">
-                  <span className="w-16 shrink-0 tabular-nums text-slate-600">[{log.time}]</span>
-                  <span className="w-24 shrink-0 font-bold text-slate-400">[{log.agent.toUpperCase()}]</span>
-                  {renderContent(log.content, getLogColor(log.type))}
-                </div>
-              ))}
+            <div ref={systemScrollRef} className="flex-1 overflow-y-auto p-2 text-[15px] leading-relaxed">
+              {systemLogs.map((log) => renderLogLine(log.time, log.agent, log.content, getLogColor(log.type), log.id))}
             </div>
           </div>
         )}
@@ -228,11 +319,9 @@ export default function ThinkingConsole({
               <div className="flex shrink-0 items-center justify-between border-b border-blue-900/40 bg-blue-900/20 px-4 py-2 text-[11px] font-bold text-blue-400">
                 <div className="flex items-center gap-2">
                   <span>{fileName}</span>
-                  {isTyping && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-ping" />}
+                  {isTyping && <span className="h-1.5 w-1.5 animate-ping rounded-full bg-blue-400" />}
                 </div>
-                <span className="text-[9px] font-normal tracking-widest text-slate-500">
-                  PIPELINE VIEW (Shift+Scroll 横向滚动)
-                </span>
+                <span className="text-[9px] font-normal tracking-widest text-slate-500">PIPELINE VIEW</span>
               </div>
 
               <div className="custom-scrollbar-horizontal flex flex-1 overflow-x-auto bg-[#02060d]">
@@ -250,19 +339,17 @@ export default function ThinkingConsole({
                       ref={(element) => {
                         stageScrollRefs.current[`${fileName}_${stage}`] = element
                       }}
-                      className="flex-1 overflow-y-auto p-2 text-[10px]"
+                      className="flex-1 overflow-y-auto p-2 text-[15px]"
                     >
-                      {stages[stage].map((log) => (
-                        <div key={log.id} className="mb-1.5 flex items-start rounded px-1 py-0.5 hover:bg-slate-800/30">
-                          <span className="w-14 shrink-0 tabular-nums text-slate-600">[{log.time}]</span>
-                          {stage === 'reviewer' && (
-                            <span className={`mr-1 shrink-0 font-bold ${getAgentColor(log.agent)}`}>
-                              [{log.agent.slice(0, 3).toUpperCase()}]
-                            </span>
-                          )}
-                          {renderContent(log.content, stage === 'reviewer' ? getLogColor(log.event === 'token' ? 'info' : log.event) : getAgentColor(log.agent))}
-                        </div>
-                      ))}
+                      {stages[stage].map((log) => {
+                        const agentMeta = getAgentBadgeMeta(log.agent)
+                        const contentTone =
+                          stage === 'reviewer'
+                            ? getLogColor(log.event === 'token' ? 'info' : log.event)
+                            : agentMeta.contentColor
+
+                        return renderLogLine(log.time, log.agent, log.content, contentTone, log.id)
+                      })}
                     </div>
                   </div>
                 ))}
@@ -280,4 +367,6 @@ export default function ThinkingConsole({
       </div>
     </div>
   )
-}
+})
+
+export default ThinkingConsole

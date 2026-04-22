@@ -1,4 +1,4 @@
-import SystemSettingsDialog from '@/components/SystemSettingsDialog'
+import SystemSettingsModal from '@/components/SystemSettingsModal'
 import { useTheme } from '@/components/next/next-themes'
 import { ArrowRight, ChevronDown, Menu, Moon, PanelsTopLeft, Settings2, Sun, TerminalSquare, Workflow, X } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
@@ -16,9 +16,9 @@ interface NavbarHeroProps {
 }
 
 const primaryNavigation = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Terminal', to: '/terminal' },
-  { label: 'Workspace', to: '/workspace' },
+  { label: '调度中心', to: '/dashboard' },
+  { label: '监控终端', to: '/terminal' },
+  { label: '审批工作台', to: '/workspace' },
 ]
 
 const quickLinks = [
@@ -28,16 +28,16 @@ const quickLinks = [
 ]
 
 const statusCards = [
-  ['Landing', '欢迎入口', '负责品牌首屏、系统简介和主要页面跳转入口。'],
-  ['Dashboard', '调度总览', '后续承接 KPI 图表、任务链路、拓扑和数据监控。'],
-  ['Workspace / Terminal', '审批与监控', '分别承接工作台和全屏流式终端能力。'],
+  ['首页入口', '系统引导'],
+  ['调度中心', '任务编排'],
+  ['工作台 / 终端', '审批与监控'],
 ]
 
 const NavbarHero: React.FC<NavbarHeroProps> = ({
-  brandName = 'NexusOps',
-  heroTitle = '文档智能体系统启动中枢',
+  brandName = 'Docs Agent',
+  heroTitle = '文档智能体协同中枢',
   heroSubtitle = '实时编排 / 协同执行 / 数据闭环',
-  heroDescription = '当前首页作为系统的登录与引导入口，后续我们会继续把旧 Vue 项目的上传、图表、审批和终端能力拆分迁入对应页面。',
+  heroDescription = '从这里进入任务调度、审批校验与全屏监控。',
   backgroundImage = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2072&q=80',
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -57,7 +57,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
     if (!mounted) return <div className="h-11 w-11" />
 
     return (
-      <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
+      <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="切换主题">
         <GlassEffect className="h-11 w-11 items-center justify-center rounded-full hover:scale-105">
           {theme === 'light' ? <Moon className="h-5 w-5 text-white" /> : <Sun className="h-5 w-5 text-white" />}
         </GlassEffect>
@@ -88,7 +88,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
             </span>
             <span>
               <span className="block text-xl font-bold leading-tight text-white">{brandName}</span>
-              <span className="block text-xs font-medium text-white/60">Landing Page</span>
+              <span className="block text-xs font-medium text-white/60">系统首页</span>
             </span>
           </Link>
 
@@ -112,7 +112,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
                   onClick={() => setOpenDropdown((current) => !current)}
                   className="flex items-center rounded-xl px-3 py-2 text-sm transition-colors hover:bg-white/15 hover:text-white"
                 >
-                  More
+                  更多
                   <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${openDropdown ? 'rotate-180' : ''}`} />
                 </button>
                 {openDropdown && (
@@ -136,21 +136,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
           </nav>
 
           <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-3 lg:flex">
-              <Link to="/terminal" className="rounded-2xl px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/15">
-                打开终端
-              </Link>
-              <Link to="/dashboard">
-                <GlassEffect className="rounded-3xl px-5 py-2.5 hover:scale-105">
-                  <span className="flex items-center gap-2 text-sm font-medium text-white">
-                    进入调度室
-                    <ArrowRight className="h-4 w-4" />
-                  </span>
-                </GlassEffect>
-              </Link>
-            </div>
-
-            <button onClick={() => setIsSettingsOpen(true)} aria-label="Open system settings">
+            <button onClick={() => setIsSettingsOpen(true)} aria-label="打开系统设置">
               <GlassEffect className="h-11 w-11 items-center justify-center rounded-full hover:scale-105">
                 <Settings2 className="h-5 w-5 text-white" />
               </GlassEffect>
@@ -158,7 +144,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
 
             <ThemeToggleButton />
 
-            <button onClick={() => setIsMobileMenuOpen((current) => !current)} className="lg:hidden" aria-label="Open menu">
+            <button onClick={() => setIsMobileMenuOpen((current) => !current)} className="lg:hidden" aria-label="打开菜单">
               <GlassEffect className="h-11 w-11 items-center justify-center rounded-full">
                 {isMobileMenuOpen ? <X className="h-6 w-6 text-white" /> : <Menu className="h-6 w-6 text-white" />}
               </GlassEffect>
@@ -169,7 +155,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
         {isMobileMenuOpen && (
           <GlassEffect className="z-20 mt-3 rounded-3xl p-3 lg:hidden" contentClassName="w-full">
             <div className="grid gap-1">
-              {[...primaryNavigation, { label: 'Home', to: '/' }].map((item) => (
+              {[...primaryNavigation, { label: '首页', to: '/' }].map((item) => (
                 <Link
                   key={item.to}
                   to={item.to}
@@ -199,29 +185,23 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
               <Link to="/dashboard">
                 <GlassEffect className="rounded-3xl px-5 py-3 hover:scale-105">
                   <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                    打开 Dashboard
+                    进入调度中心
                     <ArrowRight className="h-4 w-4" />
                   </span>
                 </GlassEffect>
               </Link>
-              <Link to="/terminal" className="rounded-3xl border border-white/25 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">
-                打开 Terminal
-              </Link>
               <Link to="/workspace" className="rounded-3xl border border-white/25 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">
-                打开 Workspace
+                打开审批工作台
               </Link>
             </div>
           </div>
 
           <div className="grid gap-4">
-            {statusCards.map(([label, value, note]) => (
+            {statusCards.map(([label, value]) => (
               <GlassEffect key={label} className="rounded-3xl p-5" contentClassName="w-full">
                 <div className="flex items-center justify-between gap-5">
-                  <div>
-                    <p className="text-sm text-white/60">{label}</p>
-                    <p className="mt-2 text-3xl font-bold text-white">{value}</p>
-                  </div>
-                  <p className="max-w-48 text-right text-sm leading-6 text-white/70">{note}</p>
+                  <p className="text-sm text-white/60">{label}</p>
+                  <p className="text-3xl font-bold text-white">{value}</p>
                 </div>
               </GlassEffect>
             ))}
@@ -229,7 +209,7 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
         </section>
       </div>
 
-      <SystemSettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+      <SystemSettingsModal open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </main>
   )
 }

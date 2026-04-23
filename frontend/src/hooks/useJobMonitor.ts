@@ -99,6 +99,8 @@ const initialStatusData: JobStatusData = {
   agentStatuses: {},
 }
 
+const STREAM_STRUCTURAL_NOISE_RE = /^[\s{}\[\]":,<>\\/]+$/
+
 type ActiveJobOptionsSnapshot = {
   inputTab: string
   pastedText?: string
@@ -178,6 +180,12 @@ function normalizeRecipientEmails(recipientEmails: string[]) {
 function normalizeReportedTokenCount(value: unknown) {
   const reportedTokens = Number(value)
   return Number.isFinite(reportedTokens) ? Math.max(reportedTokens, 0) : 0
+}
+
+function isStructuralStreamNoise(text: string) {
+  const candidate = String(text || '')
+  if (!candidate.trim()) return true
+  return STREAM_STRUCTURAL_NOISE_RE.test(candidate)
 }
 
 function stripFileExtension(fileName: string) {
@@ -620,6 +628,13 @@ export function useJobMonitor() {
     }))
   }
 
+  function clearTerminalLogs() {
+    setStatusData((current) => ({
+      ...current,
+      streamMessages: [],
+    }))
+  }
+
   function startStatusTracking(jobId: string) {
     closeEventSource()
 
@@ -636,6 +651,10 @@ export function useJobMonitor() {
         const content = normalizeStreamContent(streamData.content)
         const agent = String(streamData.agent || 'System')
         const agentKey = agent.toLowerCase()
+        const shouldIgnoreTokenNoise =
+          eventType === 'token' &&
+          (agentKey === 'dispatcher' || agentKey === 'email') &&
+          isStructuralStreamNoise(content)
         const now = new Date()
         const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
 
@@ -667,7 +686,7 @@ export function useJobMonitor() {
             nextMetric.reportedTokensTotal = nextReportedTokensTotal
             nextMetric.hasReportedTokenUpdate = true
             nextMetric.tokens = nextReportedTokensTotal
-          } else if (eventType === 'token') {
+          } else if (eventType === 'token' && !shouldIgnoreTokenNoise) {
             const estimatedDelta = estimateTokenDelta(content)
             const nextEstimatedTokens = (existingMetric.estimatedTokens || 0) + estimatedDelta
 
@@ -689,7 +708,7 @@ export function useJobMonitor() {
           }
 
           const nextStreamMessages =
-            eventType === 'token' && content
+            eventType === 'token' && content && !shouldIgnoreTokenNoise
               ? [
                   ...current.streamMessages,
                   {
@@ -1131,6 +1150,7 @@ export function useJobMonitor() {
     submitApproval,
     setDrafts,
     setRecipientEmails,
+    clearTerminalLogs,
     statusData,
   }
 }

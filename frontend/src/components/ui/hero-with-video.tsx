@@ -1,7 +1,6 @@
 import SystemSettingsModal from '@/components/SystemSettingsModal'
-import { useTheme } from '@/components/next/next-themes'
-import { ArrowRight, ChevronDown, Menu, Moon, PanelsTopLeft, Settings2, Sun, TerminalSquare, Workflow, X } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import { ArrowRight, Menu, Settings2, Workflow, X } from 'lucide-react'
+import React, { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { GlassEffect, GlassFilter } from './liquid-glass'
 
@@ -21,12 +20,6 @@ const primaryNavigation = [
   { label: '审批工作台', to: '/workspace' },
 ]
 
-const quickLinks = [
-  { label: '系统调度室', to: '/dashboard', icon: Workflow },
-  { label: '全屏监控页', to: '/terminal', icon: TerminalSquare },
-  { label: '审批工作台', to: '/workspace', icon: PanelsTopLeft },
-]
-
 const statusCards = [
   ['首页入口', '系统引导'],
   ['调度中心', '任务编排'],
@@ -41,29 +34,10 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
   backgroundImage = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2072&q=80',
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [openDropdown, setOpenDropdown] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
-  const { theme, setTheme } = useTheme()
   const location = useLocation()
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
   const isCurrent = (path: string) => location.pathname === path
-
-  const ThemeToggleButton = () => {
-    if (!mounted) return <div className="h-11 w-11" />
-
-    return (
-      <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="切换主题">
-        <GlassEffect className="h-11 w-11 items-center justify-center rounded-full hover:scale-105">
-          {theme === 'light' ? <Moon className="h-5 w-5 text-white" /> : <Sun className="h-5 w-5 text-white" />}
-        </GlassEffect>
-      </button>
-    )
-  }
 
   return (
     <main
@@ -107,31 +81,6 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
                 </li>
               ))}
 
-              <li className="relative">
-                <button
-                  onClick={() => setOpenDropdown((current) => !current)}
-                  className="flex items-center rounded-xl px-3 py-2 text-sm transition-colors hover:bg-white/15 hover:text-white"
-                >
-                  更多
-                  <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${openDropdown ? 'rotate-180' : ''}`} />
-                </button>
-                {openDropdown && (
-                  <div className="absolute left-0 top-full z-30 mt-2 w-64">
-                    <GlassEffect className="rounded-3xl p-2" contentClassName="w-full">
-                      {quickLinks.map((item) => (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm text-white/85 hover:bg-white/15"
-                        >
-                          <item.icon className="h-4 w-4" />
-                          {item.label}
-                        </Link>
-                      ))}
-                    </GlassEffect>
-                  </div>
-                )}
-              </li>
             </ul>
           </nav>
 
@@ -141,8 +90,6 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
                 <Settings2 className="h-5 w-5 text-white" />
               </GlassEffect>
             </button>
-
-            <ThemeToggleButton />
 
             <button onClick={() => setIsMobileMenuOpen((current) => !current)} className="lg:hidden" aria-label="打开菜单">
               <GlassEffect className="h-11 w-11 items-center justify-center rounded-full">

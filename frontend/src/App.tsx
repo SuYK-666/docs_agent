@@ -7,7 +7,7 @@ import WorkspacePage from '@/pages/Workspace'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 function App() {
-  const { startJob, submitApproval, setDrafts, setRecipientEmails, statusData } = useJobMonitor()
+  const { startJob, submitApproval, setDrafts, setRecipientEmails, clearTerminalLogs, statusData } = useJobMonitor()
   const location = useLocation()
   const showGlobalHeader = location.pathname !== '/'
 
@@ -18,7 +18,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/dashboard" element={<DashboardPage startJob={startJob} statusData={statusData} />} />
-          <Route path="/terminal" element={<TerminalPage statusData={statusData} />} />
+          <Route path="/terminal" element={<TerminalPage statusData={statusData} onClearLogs={clearTerminalLogs} />} />
           <Route
             path="/workspace"
             element={

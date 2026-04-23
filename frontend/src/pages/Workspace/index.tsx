@@ -197,7 +197,16 @@ function getReportLabel(reportType: ReportPreviewType) {
 
 function findSelectedHistoryRecord(history: ProcessingHistoryItem[], currentSelectedFile: string) {
   if (!currentSelectedFile) return null
-  return history.find((item) => item.fileName === currentSelectedFile) || null
+  const exact = history.find((item) => item.fileName === currentSelectedFile)
+  if (exact) return exact
+
+  const cleanTarget = currentSelectedFile.replace(/\.[^/.]+$/, '')
+  return (
+    history.find((item) => {
+      const cleanItem = item.fileName.replace(/\.[^/.]+$/, '')
+      return cleanItem.includes(cleanTarget) || cleanTarget.includes(cleanItem)
+    }) || null
+  )
 }
 
 function resolveDraftFileName(
@@ -354,7 +363,7 @@ export default function WorkspacePage({
   const isArchivedSelection = Boolean(selectedArchiveRecord) && !isCurrentLiveJob
 
   const activeDrafts = useMemo(() => {
-    if (isApprovalStage && isCurrentLiveJob) {
+    if (isApprovalStage && !isArchivedSelection) {
       return statusData.drafts
     }
 
@@ -362,7 +371,7 @@ export default function WorkspacePage({
     if (isCurrentLiveJob) return statusData.drafts
     if (selectedArchiveRecord?.drafts.length) return selectedArchiveRecord.drafts
     return []
-  }, [isApprovalStage, isCurrentLiveJob, selectedArchiveRecord, selectedHistoryItem, statusData.drafts])
+  }, [isApprovalStage, isArchivedSelection, statusData.drafts, selectedHistoryItem, isCurrentLiveJob, selectedArchiveRecord])
 
   const activeReports = useMemo(() => {
     if (selectedHistoryItem?.reports.length) return selectedHistoryItem.reports
@@ -381,6 +390,9 @@ export default function WorkspacePage({
       if (!currentSelectedFile) return false
       return (
         draft.sourceName === currentSelectedFile ||
+        (draft.sourceName && currentSelectedFile.includes(draft.sourceName)) ||
+        (draft.sourceName && draft.sourceName.includes(currentSelectedFile)) ||
+        (draft.sourceName && currentSelectedFile.includes(draft.sourceName.replace(/\.[^/.]+$/, ''))) ||
         (draft.docId && currentSelectedFile.includes(draft.docId)) ||
         (draft.title && currentSelectedFile.includes(draft.title))
       )

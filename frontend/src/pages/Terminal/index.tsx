@@ -7,9 +7,10 @@ import { Link } from 'react-router-dom'
 
 interface TerminalPageProps {
   statusData: JobStatusData
+  onClearLogs: () => void
 }
 
-export default function TerminalPage({ statusData }: TerminalPageProps) {
+export default function TerminalPage({ statusData, onClearLogs }: TerminalPageProps) {
   const consoleRef = useRef<ThinkingConsoleHandle | null>(null)
   const { formState } = useGlobalAppContext()
   const [autoScroll, setAutoScroll] = useState(true)
@@ -67,7 +68,10 @@ export default function TerminalPage({ statusData }: TerminalPageProps) {
                 <div className="mt-4 space-y-3">
                   <button
                     type="button"
-                    onClick={() => consoleRef.current?.clearLogs()}
+                    onClick={() => {
+                      consoleRef.current?.clearLogs()
+                      onClearLogs()
+                    }}
                     className="flex w-full items-center justify-center gap-2 rounded-[1rem] border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/18"
                   >
                     <Trash2 className="h-4 w-4" />

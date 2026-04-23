@@ -266,17 +266,18 @@ export default function MetricCharts() {
       series: [
         {
           name: '总 Token',
-          type: 'bar',
-          barWidth: '30%',
-          barMaxWidth: 32,
-          barMinWidth: 10,
-          barCategoryGap: '0%',
-          itemStyle: {
+          type: 'line',
+          smooth: true,
+          symbol: 'none',
+          lineStyle: {
+            width: 2,
+            color: '#3b82f6',
+          },
+          areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: '#3b82f6' },
-              { offset: 1, color: '#1d4ed8' },
+              { offset: 0, color: 'rgba(59, 130, 246, 0.4)' },
+              { offset: 1, color: 'rgba(59, 130, 246, 0.02)' },
             ]),
-            borderRadius: [4, 4, 0, 0],
           },
           data: chartSeries.map((item, index) => [`task-slot-${index}`, item.totalTokens]),
         },
@@ -285,14 +286,18 @@ export default function MetricCharts() {
           type: 'line',
           yAxisIndex: 1,
           smooth: true,
-          showSymbol: true,
+          symbol: 'none',
+          itemStyle: { color: '#a855f7' },
           connectNulls: false,
-          symbolSize: 9,
-          itemStyle: { color: '#10b981' },
           lineStyle: {
             width: 2,
-            shadowColor: 'rgba(16, 185, 129, 0.5)',
-            shadowBlur: 10,
+            color: '#a855f7',
+          },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(168, 85, 247, 0.32)' },
+              { offset: 1, color: 'rgba(168, 85, 247, 0.02)' },
+            ]),
           },
           data: denseAxis.lineData,
         },

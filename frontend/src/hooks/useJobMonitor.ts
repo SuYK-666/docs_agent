@@ -37,6 +37,10 @@ export interface JobFileMetric {
   tokens: number
   detail: string
   status: 'pending' | 'active' | 'done' | 'error'
+  estimatedTokens?: number
+  reportedTokensTotal?: number
+  reportedTokensSnapshot?: number
+  hasReportedTokenUpdate?: boolean
 }
 
 export interface JobStreamMessage {
@@ -65,6 +69,7 @@ export interface JobReport {
 
 export interface JobStatusData {
   currentJobId: string
+  submittedApprovalJobId: string
   isSubmitting: boolean
   isApproving: boolean
   jobStatus: JobRuntimeStatus
@@ -80,6 +85,7 @@ export interface JobStatusData {
 
 const initialStatusData: JobStatusData = {
   currentJobId: '',
+  submittedApprovalJobId: '',
   isSubmitting: false,
   isApproving: false,
   jobStatus: 'idle',
@@ -91,6 +97,14 @@ const initialStatusData: JobStatusData = {
   fileMetrics: {},
   streamMessages: [],
   agentStatuses: {},
+}
+
+type ActiveJobOptionsSnapshot = {
+  inputTab: string
+  pastedText?: string
+  crawlCount?: number
+  crawlUrl?: string
+  crawlKeyword?: string
 }
 
 function normalizeUploadFiles(files: UploadSourceFile[] = []) {
@@ -146,8 +160,58 @@ function estimateTokenDelta(text: unknown) {
   return normalized ? Math.max(1, Math.ceil(normalized.length / 2)) : 0
 }
 
+function normalizeStreamContent(value: unknown) {
+  if (typeof value === 'string') return value
+  if (value == null) return ''
+
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 function normalizeRecipientEmails(recipientEmails: string[]) {
   return recipientEmails.length > 0 ? recipientEmails : ['']
+}
+
+function normalizeReportedTokenCount(value: unknown) {
+  const reportedTokens = Number(value)
+  return Number.isFinite(reportedTokens) ? Math.max(reportedTokens, 0) : 0
+}
+
+function stripFileExtension(fileName: string) {
+  return fileName.replace(/\.[^/.]+$/, '')
+}
+
+function findPhysicalFileMatch(fileName: string, fileList: File[]) {
+  const normalizedFileName = String(fileName || '').trim()
+  if (!normalizedFileName) return null
+
+  return (
+    fileList.find(
+      (file) =>
+        file.name === normalizedFileName ||
+        file.name.includes(normalizedFileName) ||
+        normalizedFileName.includes(stripFileExtension(file.name)),
+    ) || null
+  )
+}
+
+function normalizeFileNameWithPhysicalFile(fileName: string, fileList: File[]) {
+  return findPhysicalFileMatch(fileName, fileList)?.name || String(fileName || '').trim()
+}
+
+function matchesLooseFileName(actualFileName: string, incomingFileName: string) {
+  const normalizedActual = String(actualFileName || '').trim()
+  const normalizedIncoming = String(incomingFileName || '').trim()
+  if (!normalizedActual || !normalizedIncoming) return false
+
+  return (
+    normalizedActual === normalizedIncoming ||
+    normalizedActual.includes(normalizedIncoming) ||
+    normalizedIncoming.includes(stripFileExtension(normalizedActual))
+  )
 }
 
 function readRecord(value: unknown) {
@@ -255,14 +319,16 @@ function findMatchingFileName(drafts: JobDraft[], fileList: File[]) {
   const draftRecord = firstDraft as Record<string, unknown>
   const docId = String(draftRecord.doc_id || '').trim()
   const title = String(draftRecord.title || '').trim()
+  const normalizedPreferredFileName = normalizeFileNameWithPhysicalFile(preferredFileName, fileList)
+  const normalizedTitle = normalizeFileNameWithPhysicalFile(title, fileList)
 
   const matchedFile =
-    fileList.find((file) => preferredFileName && file.name === preferredFileName) ||
+    findPhysicalFileMatch(preferredFileName, fileList) ||
     fileList.find((file) => docId && file.name.includes(docId)) ||
-    fileList.find((file) => title && file.name.includes(title)) ||
+    findPhysicalFileMatch(title, fileList) ||
     fileList[0]
 
-  return matchedFile?.name || preferredFileName || ''
+  return matchedFile?.name || normalizedPreferredFileName || normalizedTitle || preferredFileName || title || ''
 }
 
 function matchDraftToFileName(draft: JobDraft, fileName: string) {
@@ -271,10 +337,10 @@ function matchDraftToFileName(draft: JobDraft, fileName: string) {
   const docId = String(draftRecord.doc_id || '').trim()
   const title = String(draftRecord.title || '').trim()
 
-  return (
+  return Boolean(
     (preferredFileName && (fileName === preferredFileName || fileName.includes(preferredFileName))) ||
-    (docId && fileName.includes(docId)) ||
-    (title && fileName.includes(title))
+      (docId && fileName.includes(docId)) ||
+      (title && fileName.includes(title)),
   )
 }
 
@@ -303,6 +369,10 @@ function buildInitialMetrics(seedFileNames: string[]) {
       tokens: 0,
       detail: '正在初始化...',
       status: 'active',
+      estimatedTokens: 0,
+      reportedTokensTotal: 0,
+      reportedTokensSnapshot: 0,
+      hasReportedTokenUpdate: false,
     }
     return metrics
   }, {})
@@ -315,9 +385,9 @@ function findProcessingItemForDraft(items: ProcessingHistoryItem[], draft: JobDr
   const title = String(draftRecord.title || '').trim()
 
   return (
-    items.find((item) => item.fileName === preferredFileName) ||
+    items.find((item) => matchesLooseFileName(item.fileName, preferredFileName)) ||
     items.find((item) => docId && item.fileName.includes(docId)) ||
-    items.find((item) => title && item.fileName.includes(title)) ||
+    items.find((item) => title && matchesLooseFileName(item.fileName, title)) ||
     items[index] ||
     null
   )
@@ -328,6 +398,7 @@ function buildDraftHistoryEntries(params: {
   drafts: JobDraft[]
   currentItems: ProcessingHistoryItem[]
   fileMetrics: Record<string, JobFileMetric>
+  fileList: File[]
   inputTab?: string
   pastedText?: string
   crawlCount?: number
@@ -339,6 +410,7 @@ function buildDraftHistoryEntries(params: {
     drafts,
     currentItems,
     fileMetrics,
+    fileList,
     inputTab = 'upload',
     pastedText = '',
     crawlCount = 0,
@@ -355,8 +427,10 @@ function buildDraftHistoryEntries(params: {
 
   return limitedDrafts.map((draft, index) => {
     const matchedItem = findProcessingItemForDraft(currentItems, draft, index)
-    const fileName = getDraftPreferredFileName(draft, index)
-    const metric = findMetricByFileName(fileMetrics, matchedItem?.fileName || fileName)
+    const preferredFileName = getDraftPreferredFileName(draft, index)
+    const physicalFile = findPhysicalFileMatch(matchedItem?.fileName || preferredFileName, fileList)
+    const fileName = physicalFile?.name || matchedItem?.fileName || preferredFileName
+    const metric = findMetricByFileName(fileMetrics, fileName)
 
     return createProcessingHistoryItem({
       id: matchedItem?.id || `${jobId}-${fileName}-${index}`,
@@ -367,9 +441,10 @@ function buildDraftHistoryEntries(params: {
       tokenCount: metric?.tokens || matchedItem?.tokenCount || 0,
       metricPercent: metric?.percent || matchedItem?.metricPercent || 100,
       metricDetail: metric?.detail || matchedItem?.metricDetail || '等待校验',
-      sourceFile: matchedItem?.sourceFile ?? null,
+      sourceFile: matchedItem?.sourceFile ?? physicalFile ?? null,
       sourceType:
         matchedItem?.sourceType ||
+        physicalFile?.type ||
         (inputTab === 'paste' && index === 0 ? 'pasted-text' : inputTab === 'crawl' ? 'crawl-target' : ''),
       sourceText:
         matchedItem?.sourceText ||
@@ -392,6 +467,8 @@ function buildHistoryRecord(params: {
   const { jobId, processingItems, fileMetrics, drafts, reports, inputTab, requestedCount = 0 } = params
   const createdAt = processingItems[0]?.createdAt || new Date().toLocaleString('zh-CN', { hour12: false })
   const completedAt = new Date().toLocaleString('zh-CN', { hour12: false })
+  const persistedDrafts = sanitizeForStorage(enrichDraftScores(drafts)) as JobDraft[]
+  const persistedReports = sanitizeForStorage(reports) as JobReport[]
 
   const files: HistoryRecordFileMeta[] =
     processingItems.length > 0
@@ -432,8 +509,8 @@ function buildHistoryRecord(params: {
     totalTokens,
     averageConfidence: randomFloat(0.88, 0.99, 2),
     ragHitRate: randomFloat(85, 98, 1),
-    drafts,
-    reports,
+    drafts: persistedDrafts,
+    reports: persistedReports,
   }) as HistoryRecord
 }
 
@@ -503,14 +580,6 @@ async function buildHistoryEntries(
   )
 }
 
-type ActiveJobOptionsSnapshot = {
-  inputTab: string
-  pastedText?: string
-  crawlCount?: number
-  crawlUrl?: string
-  crawlKeyword?: string
-}
-
 export function useJobMonitor() {
   const navigate = useNavigate()
   const { fileList, processingHistory, setCurrentSelectedFile, setProcessingHistory, setHistoryRecords } =
@@ -560,20 +629,26 @@ export function useJobMonitor() {
     nextEventSource.addEventListener('stream', (event) => {
       try {
         const streamData = JSON.parse(event.data) as Record<string, unknown>
-        const fileName = String(streamData.file_name || 'Global')
+        const rawFileName = String(streamData.file_name || 'Global')
+        const matchedPhysicalFile = findPhysicalFileMatch(rawFileName, fileList)
+        const fileName = matchedPhysicalFile?.name || rawFileName
         const eventType = String(streamData.event || 'token')
-        const content = String(streamData.content || '')
+        const content = normalizeStreamContent(streamData.content)
         const agent = String(streamData.agent || 'System')
         const agentKey = agent.toLowerCase()
         const now = new Date()
         const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
 
         setStatusData((current) => {
-          const existingMetric = current.fileMetrics[fileName] ?? {
+          const existingMetric = current.fileMetrics[fileName] ?? current.fileMetrics[rawFileName] ?? {
             percent: 0,
             tokens: 0,
             detail: '等待调度',
             status: 'pending' as const,
+            estimatedTokens: 0,
+            reportedTokensTotal: 0,
+            reportedTokensSnapshot: 0,
+            hasReportedTokenUpdate: false,
           }
 
           const nextMetric: JobFileMetric = {
@@ -583,9 +658,23 @@ export function useJobMonitor() {
           const nextAgentStatuses = { ...current.agentStatuses }
 
           if (eventType === 'token_update') {
-            nextMetric.tokens = Number(streamData.tokens || streamData.usage_tokens || 0)
+            const reportedTokens = normalizeReportedTokenCount(streamData.tokens || streamData.usage_tokens || 0)
+            const previousReportedTokens = existingMetric.reportedTokensSnapshot || 0
+            const reportedDelta = reportedTokens >= previousReportedTokens ? reportedTokens - previousReportedTokens : reportedTokens
+            const nextReportedTokensTotal = (existingMetric.reportedTokensTotal || 0) + reportedDelta
+
+            nextMetric.reportedTokensSnapshot = reportedTokens
+            nextMetric.reportedTokensTotal = nextReportedTokensTotal
+            nextMetric.hasReportedTokenUpdate = true
+            nextMetric.tokens = nextReportedTokensTotal
           } else if (eventType === 'token') {
-            nextMetric.tokens += estimateTokenDelta(content)
+            const estimatedDelta = estimateTokenDelta(content)
+            const nextEstimatedTokens = (existingMetric.estimatedTokens || 0) + estimatedDelta
+
+            nextMetric.estimatedTokens = nextEstimatedTokens
+            if (!existingMetric.hasReportedTokenUpdate) {
+              nextMetric.tokens = nextEstimatedTokens
+            }
           }
 
           if (eventType === 'stage_start') {
@@ -617,7 +706,10 @@ export function useJobMonitor() {
 
           setProcessingHistory((history) => {
             const currentJobItems = history.filter((item) => item.jobId === jobId)
-            const existingItem = currentJobItems.find((item) => item.fileName === fileName)
+            const existingItem =
+              currentJobItems.find((item) => item.fileName === fileName) ||
+              currentJobItems.find((item) => item.fileName === rawFileName) ||
+              currentJobItems.find((item) => matchesLooseFileName(item.fileName, rawFileName))
             const nextItem = createProcessingHistoryItem({
               id: existingItem?.id || `${jobId}-${fileName}`,
               jobId,
@@ -627,22 +719,34 @@ export function useJobMonitor() {
               tokenCount: nextMetric.tokens,
               metricPercent: nextMetric.percent,
               metricDetail: nextMetric.detail,
-              sourceFile: existingItem?.sourceFile ?? null,
-              sourceType: existingItem?.sourceType || '',
+              sourceFile: existingItem?.sourceFile ?? matchedPhysicalFile ?? null,
+              sourceType: existingItem?.sourceType || matchedPhysicalFile?.type || '',
               sourceText: existingItem?.sourceText || '',
               drafts: existingItem?.drafts || [],
               reports: existingItem?.reports || [],
             })
 
-            return [...history.filter((item) => !(item.jobId === jobId && item.fileName === fileName)), nextItem].slice(-50)
+            return [
+              ...history.filter(
+                (item) =>
+                  !(
+                    item.jobId === jobId &&
+                    (item.fileName === fileName || item.fileName === rawFileName || matchesLooseFileName(item.fileName, rawFileName))
+                  ),
+              ),
+              nextItem,
+            ].slice(-50)
           })
+
+          const nextFileMetrics = { ...current.fileMetrics }
+          if (rawFileName !== fileName) {
+            delete nextFileMetrics[rawFileName]
+          }
+          nextFileMetrics[fileName] = nextMetric
 
           return {
             ...current,
-            fileMetrics: {
-              ...current.fileMetrics,
-              [fileName]: nextMetric,
-            },
+            fileMetrics: nextFileMetrics,
             agentStatuses: nextAgentStatuses,
             streamMessages: nextStreamMessages,
           }
@@ -673,6 +777,7 @@ export function useJobMonitor() {
             drafts: nextDrafts,
             currentItems: processingHistoryRef.current.filter((item) => item.jobId === jobId),
             fileMetrics: statusDataRef.current.fileMetrics,
+            fileList,
             inputTab: activeJobOptionsRef.current?.inputTab || 'upload',
             pastedText: activeJobOptionsRef.current?.pastedText || '',
             crawlCount: activeJobOptionsRef.current?.crawlCount,
@@ -767,7 +872,6 @@ export function useJobMonitor() {
                       tokenCount: statusDataRef.current.fileMetrics[item.fileName]?.tokens || item.tokenCount,
                       metricPercent: 100,
                       metricDetail: '任务执行完毕',
-                      sourceFile: null,
                       reports: nextReports.filter((report) => matchReportToFileName(report, item.fileName)),
                     },
               )
@@ -877,6 +981,7 @@ export function useJobMonitor() {
     setStatusData((current) => ({
       ...current,
       currentJobId: '',
+      submittedApprovalJobId: '',
       isSubmitting: true,
       isApproving: false,
       jobStatus: 'uploading',
@@ -957,6 +1062,7 @@ export function useJobMonitor() {
 
     setStatusData((current) => ({
       ...current,
+      submittedApprovalJobId: currentJobId,
       isApproving: true,
       isSubmitting: true,
       jobStatus: 'uploading',
@@ -991,7 +1097,6 @@ export function useJobMonitor() {
           ...draft,
           isFinalized: true,
         })),
-        isApproving: false,
         isSubmitting: true,
         jobStatus: 'uploading',
         error: null,
@@ -1002,12 +1107,16 @@ export function useJobMonitor() {
     } catch (error) {
       setStatusData((current) => ({
         ...current,
-        isApproving: false,
         isSubmitting: false,
         jobStatus: 'pending_approval',
         error: error instanceof Error ? error.message : '审批提交失败',
       }))
       return false
+    } finally {
+      setStatusData((current) => ({
+        ...current,
+        isApproving: false,
+      }))
     }
   }
 

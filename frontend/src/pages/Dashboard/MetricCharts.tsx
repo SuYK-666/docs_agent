@@ -14,6 +14,18 @@ type MetricState = Record<
   }
 >
 
+type ChartPoint = {
+  label: string
+  totalTokens: number
+  averageConfidence: number
+}
+
+type DenseAxisPayload = {
+  categories: string[]
+  labelMap: Record<string, string>
+  lineData: Array<[string, number]>
+}
+
 const defaultMetricState: MetricState = {
   throughput: { current: 0, target: 0 },
   hitRate: { current: 0, target: 0 },
@@ -44,6 +56,46 @@ const metricCards = [
   },
 ]
 
+function buildDenseAxis(points: ChartPoint[]): DenseAxisPayload {
+  if (points.length === 0) {
+    return {
+      categories: [],
+      labelMap: {},
+      lineData: [],
+    }
+  }
+
+  const sidePadding = Math.max(3, Math.ceil(points.length / 2) + 1)
+  const categories: string[] = []
+  const labelMap: Record<string, string> = {}
+  const lineData: Array<[string, number]> = []
+
+  for (let i = 0; i < sidePadding; i += 1) {
+    categories.push(`pad-start-${i}`)
+  }
+
+  points.forEach((point, index) => {
+    const slotKey = `task-slot-${index}`
+    categories.push(slotKey)
+    labelMap[slotKey] = point.label
+    lineData.push([slotKey, point.averageConfidence])
+
+    if (index < points.length - 1) {
+      categories.push(`task-gap-${index}`)
+    }
+  })
+
+  for (let i = 0; i < sidePadding; i += 1) {
+    categories.push(`pad-end-${i}`)
+  }
+
+  return {
+    categories,
+    labelMap,
+    lineData,
+  }
+}
+
 export default function MetricCharts() {
   const { historyRecords } = useGlobalAppContext()
   const chartContainerRef = useRef<HTMLDivElement | null>(null)
@@ -51,22 +103,32 @@ export default function MetricCharts() {
   const [kpi, setKpi] = useState<MetricState>(defaultMetricState)
 
   const hasHistory = historyRecords.length > 0
-  const latestRecord = historyRecords[historyRecords.length - 1] || null
+  const latestRecord = useMemo(() => {
+    const record = historyRecords[historyRecords.length - 1] || null
+    if (!record) return null
 
-  const chartSeries = useMemo(
+    return {
+      ...record,
+      totalFilesProcessed: historyRecords.reduce((sum, item) => sum + (item.files?.length || 0), 0),
+    }
+  }, [historyRecords])
+
+  const chartSeries = useMemo<ChartPoint[]>(
     () =>
       historyRecords.map((record, index) => ({
         label: `Task-${String(index + 1).padStart(2, '0')}`,
-        throughputCount: record.throughputCount || record.fileCount || record.files.length || 0,
+        totalTokens: record.totalTokens || 0,
         averageConfidence: record.averageConfidence,
       })),
     [historyRecords],
   )
 
+  const denseAxis = useMemo(() => buildDenseAxis(chartSeries), [chartSeries])
+
   useEffect(() => {
     let frameId = 0
     const targets = {
-      throughput: latestRecord?.throughputCount || latestRecord?.fileCount || latestRecord?.files.length || 0,
+      throughput: latestRecord?.totalFilesProcessed || 0,
       hitRate: latestRecord?.ragHitRate || 0,
       confidence: latestRecord?.averageConfidence || 0,
     }
@@ -106,7 +168,7 @@ export default function MetricCharts() {
 
     frameId = window.requestAnimationFrame(tick)
     return () => window.cancelAnimationFrame(frameId)
-  }, [kpi.confidence.current, kpi.hitRate.current, kpi.throughput.current, latestRecord])
+  }, [latestRecord])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -133,8 +195,7 @@ export default function MetricCharts() {
       tooltip: {
         trigger: 'axis',
         axisPointer: {
-          type: 'cross',
-          crossStyle: { color: '#64748b' },
+          type: 'shadow',
         },
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
         borderColor: '#334155',
@@ -150,8 +211,8 @@ export default function MetricCharts() {
       dataZoom: [
         {
           type: 'inside',
-          startValue: Math.max(chartSeries.length - 8, 0),
-          endValue: Math.max(chartSeries.length - 1, 0),
+          startValue: Math.max(denseAxis.categories.length - 15, 0),
+          endValue: Math.max(denseAxis.categories.length - 1, 0),
         },
         {
           type: 'slider',
@@ -163,21 +224,30 @@ export default function MetricCharts() {
           handleStyle: {
             color: '#93c5fd',
           },
+          startValue: Math.max(denseAxis.categories.length - 15, 0),
+          endValue: Math.max(denseAxis.categories.length - 1, 0),
         },
       ],
       xAxis: [
         {
           type: 'category',
-          data: chartSeries.map((item) => item.label),
+          data: denseAxis.categories,
+          boundaryGap: true,
           axisPointer: { type: 'shadow' },
           axisLine: { lineStyle: { color: '#475569' } },
-          axisLabel: { color: '#94a3b8', fontSize: 10 },
+          axisTick: { show: false },
+          axisLabel: {
+            color: '#94a3b8',
+            fontSize: 10,
+            interval: 0,
+            formatter: (value: string) => denseAxis.labelMap[value] || '',
+          },
         },
       ],
       yAxis: [
         {
           type: 'value',
-          name: '文件数',
+          name: 'Token 消耗',
           nameTextStyle: { color: '#64748b', fontSize: 10 },
           min: 0,
           splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
@@ -195,9 +265,12 @@ export default function MetricCharts() {
       ],
       series: [
         {
-          name: '吞吐量',
+          name: '总 Token',
           type: 'bar',
-          barWidth: '10%',
+          barWidth: '30%',
+          barMaxWidth: 32,
+          barMinWidth: 10,
+          barCategoryGap: '0%',
           itemStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
               { offset: 0, color: '#3b82f6' },
@@ -205,24 +278,27 @@ export default function MetricCharts() {
             ]),
             borderRadius: [4, 4, 0, 0],
           },
-          data: chartSeries.map((item) => item.throughputCount),
+          data: chartSeries.map((item, index) => [`task-slot-${index}`, item.totalTokens]),
         },
         {
           name: '平均置信度',
           type: 'line',
           yAxisIndex: 1,
           smooth: true,
+          showSymbol: true,
+          connectNulls: false,
+          symbolSize: 9,
           itemStyle: { color: '#10b981' },
           lineStyle: {
             width: 2,
             shadowColor: 'rgba(16, 185, 129, 0.5)',
             shadowBlur: 10,
           },
-          data: chartSeries.map((item) => item.averageConfidence),
+          data: denseAxis.lineData,
         },
       ],
     })
-  }, [chartSeries])
+  }, [denseAxis])
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_290px] xl:items-stretch">

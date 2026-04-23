@@ -70,6 +70,17 @@ function nowTimeString() {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
 }
 
+function normalizeConsoleText(text: unknown) {
+  if (typeof text === 'string') return text
+  if (text == null) return ''
+
+  try {
+    return JSON.stringify(text, null, 2)
+  } catch {
+    return String(text)
+  }
+}
+
 function formatText(text: string, isDesensitized: boolean) {
   if (!isDesensitized || !text) return text
 
@@ -128,10 +139,11 @@ function getPrefixColor(prefix: string) {
 }
 
 function parseLogParts(time: string, agent: string, content: string) {
-  const inlinePrefix = extractInlinePrefix(content)
+  const normalizedContent = normalizeConsoleText(content)
+  const inlinePrefix = extractInlinePrefix(normalizedContent)
   const resolvedLabel = inlinePrefix ? inlinePrefix.prefix : getAgentBadgeMeta(agent).label
   const badgeColor = inlinePrefix ? getPrefixColor(inlinePrefix.prefix) : getAgentBadgeMeta(agent).badgeColor
-  const body = inlinePrefix ? inlinePrefix.body : content
+  const body = inlinePrefix ? inlinePrefix.body : normalizedContent
 
   return {
     timeLabel: `[${time}]`,
@@ -251,7 +263,7 @@ const ThinkingConsole = forwardRef<ThinkingConsoleHandle, ThinkingConsoleProps>(
   }, [autoScroll, visibleLogs])
 
   const renderContent = (content: string, colorClass: string) => {
-    const safeText = formatText(content, isDesensitized)
+    const safeText = formatText(normalizeConsoleText(content), isDesensitized)
     return (
       <pre className={`min-w-0 flex-1 whitespace-pre-wrap break-all text-[15px] leading-7 ${colorClass}`}>
         {safeText}
@@ -272,7 +284,7 @@ const ThinkingConsole = forwardRef<ThinkingConsoleHandle, ThinkingConsoleProps>(
       <div key={key} className="mb-3 flex flex-col rounded px-1 py-1 transition-colors hover:bg-slate-800/30">
         <span className="mb-1 block w-full text-[12px] tabular-nums text-slate-500">{logParts.timeLabel}</span>
         <div className="flex min-w-0 items-start gap-2">
-          <span className={`shrink-0 font-bold text-[13px] ${logParts.badgeColor}`}>{logParts.label}</span>
+          <span className={`shrink-0 text-[13px] font-bold ${logParts.badgeColor}`}>{logParts.label}</span>
           {renderContent(logParts.body, toneClass)}
         </div>
       </div>

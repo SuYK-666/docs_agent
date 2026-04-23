@@ -281,17 +281,32 @@ function buildWorkspaceHistoryItems(
   const archivedItems = [...historyRecords]
     .reverse()
     .filter((record) => !liveJobIds.has(record.jobId))
-    .map<WorkspaceHistoryListItem>((record) => ({
-      key: `archive-${record.jobId}`,
-      fileName: record.files[0]?.fileName || record.jobId,
-      jobId: record.jobId,
-      createdAt: record.completedAt || record.createdAt,
-      status: record.status === 'success' ? 'done' : 'error',
-      tokenCount: record.totalTokens,
-      metricPercent: 100,
-      metricDetail: `已归档 · ${record.fileCount} 份文件`,
-      isArchived: true,
-    }))
+    .flatMap<WorkspaceHistoryListItem>((record) => {
+      const archivedFiles = record.files.length
+        ? record.files
+        : [
+            {
+              fileName: record.jobId,
+              fileSize: 0,
+              fileType: '',
+              tokenCount: record.totalTokens,
+              metricPercent: 100,
+              metricDetail: '',
+            },
+          ]
+
+      return archivedFiles.map((file) => ({
+        key: `archive-${record.jobId}-${file.fileName}`,
+        fileName: file.fileName,
+        jobId: record.jobId,
+        createdAt: record.completedAt || record.createdAt,
+        status: record.status === 'success' ? 'done' : 'error',
+        tokenCount: file.tokenCount || record.totalTokens,
+        metricPercent: file.metricPercent || 100,
+        metricDetail: file.metricDetail || `已归档 · ${record.fileCount} 份文件`,
+        isArchived: true,
+      }))
+    })
 
   return [...liveItems, ...archivedItems]
 }
@@ -312,11 +327,13 @@ export default function WorkspacePage({
   const [reportPreviewLoading, setReportPreviewLoading] = useState(false)
   const [reportPreviewType, setReportPreviewType] = useState<ReportPreviewType>('')
   const [reportPreviewUrl, setReportPreviewUrl] = useState('')
-  const [approvalSubmitted, setApprovalSubmitted] = useState(false)
+  const [isLocalSubmitting, setIsLocalSubmitting] = useState(false)
   const sourceObjectUrlRef = useRef('')
   const sourceDocxTimerRef = useRef<number | null>(null)
 
   const isApprovalStage = statusData.jobStatus === 'pending_approval'
+  const approvalSubmitted =
+    Boolean(statusData.currentJobId) && statusData.submittedApprovalJobId === statusData.currentJobId
   const hasSelectedFile = Boolean(currentSelectedFile)
   const historyItems = useMemo(
     () => buildWorkspaceHistoryItems(processingHistory, historyRecords),
@@ -330,8 +347,9 @@ export default function WorkspacePage({
     () => findSelectedArchiveRecord(historyRecords, currentSelectedFile),
     [currentSelectedFile, historyRecords],
   )
+  const activeJobId = statusData.currentJobId || processingHistory[processingHistory.length - 1]?.jobId || ''
   const isCurrentLiveJob = Boolean(
-    selectedHistoryItem && statusData.currentJobId && selectedHistoryItem.jobId === statusData.currentJobId,
+    selectedHistoryItem && activeJobId && selectedHistoryItem.jobId === activeJobId,
   )
   const isArchivedSelection = Boolean(selectedArchiveRecord) && !isCurrentLiveJob
 
@@ -352,6 +370,7 @@ export default function WorkspacePage({
     if (selectedArchiveRecord?.reports.length) return selectedArchiveRecord.reports
     return []
   }, [isCurrentLiveJob, selectedArchiveRecord, selectedHistoryItem, statusData.reports])
+  const recipientEmails = statusData.recipientEmails || ['']
 
   const workspaceDrafts = useMemo(() => buildWorkspaceDrafts(activeDrafts), [activeDrafts])
 
@@ -380,13 +399,20 @@ export default function WorkspacePage({
     return activeReports.find((report) => matchReportToFileName(report, currentSelectedFile)) || null
   }, [activeReports, currentSelectedFile])
 
-  const liveSelectedFile = useMemo(
-    () => fileList.find((file) => currentSelectedFile && file.name === currentSelectedFile) || null,
-    [currentSelectedFile, fileList],
-  )
-  const selectedSourceFile = isArchivedSelection ? null : selectedHistoryItem?.sourceFile ?? liveSelectedFile
+  const liveSelectedFile = useMemo(() => {
+    if (!currentSelectedFile) return null
+    return (
+      fileList.find(
+        (file) =>
+          file.name === currentSelectedFile ||
+          file.name.includes(currentSelectedFile) ||
+          currentSelectedFile.includes(file.name.replace(/\.[^/.]+$/, '')),
+      ) || null
+    )
+  }, [currentSelectedFile, fileList])
+  const selectedSourceFile = isArchivedSelection ? null : liveSelectedFile || selectedHistoryItem?.sourceFile || null
   const selectedSourceType = isArchivedSelection ? '' : selectedHistoryItem?.sourceType || selectedSourceFile?.type || ''
-  const selectedSourceName = (isArchivedSelection ? '' : selectedHistoryItem?.fileName || selectedSourceFile?.name || '').toLowerCase()
+  const selectedSourceName = (isArchivedSelection ? '' : selectedSourceFile?.name || selectedHistoryItem?.fileName || '').toLowerCase()
   const crawlerMeta = useMemo(() => parseCrawlerMeta(selectedHistoryItem?.sourceText || ''), [selectedHistoryItem?.sourceText])
   const releasedHistorySource = Boolean(
     selectedHistoryItem &&
@@ -405,15 +431,16 @@ export default function WorkspacePage({
   const isAnalysisSplit = !isArchivedSelection && isApprovalStage && activePreviewTab === 'analysis'
 
   useEffect(() => {
-    if (isArchivedSelection && activePreviewTab === 'source') {
-      setActivePreviewTab('verification')
+    if (isArchivedSelection) {
+      setActivePreviewTab((previousTab) => (previousTab === 'source' ? 'verification' : previousTab))
       return
     }
 
     if (isApprovalStage && !isArchivedSelection) {
       setActivePreviewTab('verification')
     }
-  }, [activePreviewTab, isApprovalStage, isArchivedSelection])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isApprovalStage, isArchivedSelection])
 
   useEffect(() => {
     return () => {
@@ -487,22 +514,6 @@ export default function WorkspacePage({
 
       if (sourceName.endsWith('.docx')) {
         setPreviewType('docx')
-
-        if (!sourcePaneVisible) return
-
-        const container = document.getElementById('docx-preview-container')
-        if (!container) return
-
-        container.innerHTML = ''
-        setPreviewLoading(true)
-
-        void import('docx-preview')
-          .then(({ renderAsync }) => renderAsync(sourceFile, container, undefined, { inWrapper: true }))
-          .then(() => setPreviewLoading(false))
-          .catch(() => {
-            setPreviewType('unsupported')
-            setPreviewLoading(false)
-          })
         return
       }
     }
@@ -549,7 +560,10 @@ export default function WorkspacePage({
     sourceDocxTimerRef.current = window.setTimeout(() => {
       requestAnimationFrame(() => {
         const container = document.getElementById('docx-preview-container')
-        if (!container) return
+        if (!container) {
+          setPreviewLoading(false)
+          return
+        }
 
         container.innerHTML = ''
         setPreviewLoading(true)
@@ -558,7 +572,7 @@ export default function WorkspacePage({
           .then(({ renderAsync }) => renderAsync(selectedSourceFile, container, undefined, { inWrapper: true }))
           .then(() => setPreviewLoading(false))
           .catch(() => {
-            setPreviewType('unsupported')
+            container.innerHTML = ''
             setPreviewLoading(false)
           })
       })
@@ -570,7 +584,7 @@ export default function WorkspacePage({
         sourceDocxTimerRef.current = null
       }
     }
-  }, [activePreviewTab, currentSelectedFile, isSourceDocx, previewType, selectedSourceFile, sourcePaneVisible])
+  }, [activePreviewTab, currentSelectedFile, isSourceDocx, previewType, selectedSourceFile, shouldSplitPreview, sourcePaneVisible])
 
   useEffect(() => {
     const container = document.getElementById('report-docx-container')
@@ -618,15 +632,15 @@ export default function WorkspacePage({
   }
 
   const updateEmail = (index: number, value: string) => {
-    setRecipientEmails(statusData.recipientEmails.map((email, currentIndex) => (currentIndex === index ? value : email)))
+    setRecipientEmails(recipientEmails.map((email, currentIndex) => (currentIndex === index ? value : email)))
   }
 
   const addEmail = () => {
-    setRecipientEmails([...statusData.recipientEmails, ''])
+    setRecipientEmails([...recipientEmails, ''])
   }
 
   const removeEmail = (index: number) => {
-    const nextEmails = statusData.recipientEmails.filter((_, currentIndex) => currentIndex !== index)
+    const nextEmails = recipientEmails.filter((_, currentIndex) => currentIndex !== index)
     setRecipientEmails(nextEmails.length > 0 ? nextEmails : [''])
   }
 
@@ -648,20 +662,18 @@ export default function WorkspacePage({
   }
 
   const handleSubmitApproval = async () => {
-    if (workspaceDrafts.length === 0 || approvalSubmitted) return
-    setApprovalSubmitted(false)
-    const success = await submitApproval({ mode: formState.mode })
-    if (success) {
-      setApprovalSubmitted(true)
-      setActivePreviewTab('source')
+    if (isLocalSubmitting) return
+    setIsLocalSubmitting(true)
+    try {
+      if (workspaceDrafts.length === 0 || approvalSubmitted) return
+      const success = await submitApproval({ mode: formState.mode })
+      if (success) {
+        setActivePreviewTab('source')
+      }
+    } finally {
+      setIsLocalSubmitting(false)
     }
   }
-
-  useEffect(() => {
-    if (statusData.jobStatus === 'pending_approval') {
-      setApprovalSubmitted(false)
-    }
-  }, [statusData.currentJobId, statusData.jobStatus])
 
   const renderSourcePane = (label?: string) => (
     <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/20">
@@ -849,7 +861,7 @@ export default function WorkspacePage({
               <div className="rounded-[1.25rem] border border-blue-500/20 bg-blue-500/8 p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">下发目标邮箱</div>
                 <div className="space-y-2">
-                  {statusData.recipientEmails.map((email, index) => (
+                  {(statusData.recipientEmails || ['']).map((email, index) => (
                     <div key={index} className="flex gap-2">
                       <input
                         value={email}
@@ -857,7 +869,7 @@ export default function WorkspacePage({
                         placeholder="输入接收方邮箱地址..."
                         className="flex-1 rounded-[1rem] border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/35"
                       />
-                      {index === statusData.recipientEmails.length - 1 && (
+                      {index === recipientEmails.length - 1 && (
                         <button
                           type="button"
                           onClick={addEmail}
@@ -866,7 +878,7 @@ export default function WorkspacePage({
                           +
                         </button>
                       )}
-                      {statusData.recipientEmails.length > 1 && (
+                      {recipientEmails.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeEmail(index)}
@@ -896,7 +908,7 @@ export default function WorkspacePage({
             <button
               type="button"
               onClick={() => void handleSubmitApproval()}
-              disabled={statusData.isApproving || approvalSubmitted}
+              disabled={isLocalSubmitting || statusData.isApproving || approvalSubmitted}
               className={`w-full rounded-[1.2rem] px-4 py-3 text-sm font-bold tracking-[0.14em] text-white transition ${
                 approvalSubmitted
                   ? 'cursor-not-allowed bg-slate-600 opacity-70'
@@ -916,103 +928,18 @@ export default function WorkspacePage({
   }
 
   const renderArchiveSummaryBoard = () => {
-    if (!selectedArchiveRecord) {
-      return <div className="flex h-full items-center justify-center text-white/45">暂无归档摘要</div>
-    }
-
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/20">
-        <div className="border-b border-white/8 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan-300/10 text-cyan-100">
-              <FolderOpen className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200/70">归档摘要</p>
-              <p className="mt-1 text-sm text-white/78">📦 历史文件原件已从内存释放，当前仅保留运行指标摘要</p>
-            </div>
+      <div className="flex h-full min-h-0 items-center justify-center rounded-[1.5rem] border border-dashed border-white/10 bg-black/20 px-8 text-center">
+        <div className="flex max-w-xl flex-col items-center gap-4 text-slate-400">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl border border-slate-700/70 bg-slate-800/40 text-slate-300">
+            <FolderOpen className="h-6 w-6" />
           </div>
-        </div>
-
-        <div className="grid gap-3 border-b border-white/8 p-4 md:grid-cols-3">
-          <div className="rounded-[1.1rem] border border-white/10 bg-white/5 p-4">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">总 Token</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{selectedArchiveRecord.totalTokens}</p>
+          <div className="space-y-2">
+            <p className="text-lg font-semibold text-slate-200">历史记录已过期</p>
+            <p className="text-sm leading-7 text-slate-400">
+              该任务已经归档，原文、校验信息和 AI 结果预览都已关闭。历史文件原件已从内存释放，请返回当前任务继续查看实时预览。
+            </p>
           </div>
-          <div className="rounded-[1.1rem] border border-white/10 bg-white/5 p-4">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">平均置信度</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{selectedArchiveRecord.averageConfidence.toFixed(2)}</p>
-          </div>
-          <div className="rounded-[1.1rem] border border-white/10 bg-white/5 p-4">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">RAG 命中率</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{selectedArchiveRecord.ragHitRate.toFixed(1)}%</p>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4">
-          {workspaceDrafts.length > 0 ? (
-            <div className="space-y-4">
-              {workspaceDrafts.map((draft) => (
-                <div key={draft.key} className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-base font-semibold text-white">{draft.title}</p>
-                      <p className="truncate text-xs text-white/45">{draft.sourceName || draft.docId}</p>
-                    </div>
-                    <span className="shrink-0 rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
-                      静态校验结果
-                    </span>
-                  </div>
-
-                  <div className="space-y-3">
-                    {draft.tasks.map((task) => {
-                      const isLowScore = task.score < 85
-
-                      return (
-                        <div
-                          key={task.key}
-                          className={`rounded-[1rem] border p-4 ${
-                            isLowScore ? 'border-amber-500/35 bg-amber-500/10' : 'border-white/8 bg-black/15'
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">任务 ID #{task.taskId}</p>
-                              <p className="truncate text-sm font-semibold text-white">{task.taskName}</p>
-                            </div>
-                            <span
-                              className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${
-                                isLowScore
-                                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                              }`}
-                            >
-                              评分 {task.score}
-                            </span>
-                          </div>
-
-                          <p className="mt-3 text-sm leading-7 text-white/68">{task.content}</p>
-
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-[0.9rem] border border-white/8 bg-white/5 px-3 py-2.5">
-                              <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">责任人</p>
-                              <p className="mt-1 text-sm text-white">{task.owner || '未填写'}</p>
-                            </div>
-                            <div className="rounded-[0.9rem] border border-white/8 bg-white/5 px-3 py-2.5">
-                              <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">截止日期</p>
-                              <p className="mt-1 text-sm text-white">{task.deadline || '未填写'}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center text-white/45">该批次没有可展示的校验任务快照</div>
-          )}
         </div>
       </div>
     )
@@ -1256,7 +1183,7 @@ export default function WorkspacePage({
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
                 {historyItems.length > 0 ? (
                   historyItems.map((item) => {
-                    const isCurrent = !item.isArchived && item.jobId === statusData.currentJobId
+                    const isCurrent = !item.isArchived && item.jobId === activeJobId
                     const isSelected = currentSelectedFile === item.fileName
                     const textTone = isCurrent ? 'text-slate-200' : 'text-slate-400'
 
@@ -1269,8 +1196,8 @@ export default function WorkspacePage({
                           isCurrent
                             ? 'border-blue-500 bg-slate-800 opacity-100 shadow-md'
                             : item.isArchived
-                              ? 'border-slate-800 bg-slate-900/50 opacity-80'
-                              : 'border-slate-800 bg-slate-900/50 opacity-60 grayscale-[50%]'
+                              ? 'border-slate-700/60 bg-slate-800/20 opacity-100 grayscale-[65%]'
+                              : 'border-slate-700/60 bg-slate-800/20 opacity-90 grayscale-[45%]'
                         } ${isSelected ? 'border-l-4 border-blue-500 bg-blue-900/20 ring-1 ring-cyan-300/35' : ''}`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -1336,41 +1263,47 @@ export default function WorkspacePage({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {!isArchivedSelection && (
-                    <button
-                      type="button"
-                      onClick={() => setActivePreviewTab('source')}
-                      className={`rounded-full px-4 py-2 text-sm transition ${
-                        activePreviewTab === 'source'
-                          ? 'bg-white text-slate-900'
-                          : 'border border-white/10 bg-white/6 text-white/72 hover:bg-white/10'
-                      }`}
-                    >
-                      📄 原文预览
-                    </button>
+                  {isArchivedSelection ? (
+                    <span className="rounded-full border border-slate-700/70 bg-slate-800/35 px-4 py-2 text-sm text-slate-300">
+                      历史记录已过期
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setActivePreviewTab('source')}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          activePreviewTab === 'source'
+                            ? 'bg-white text-slate-900'
+                            : 'border border-white/10 bg-white/6 text-white/72 hover:bg-white/10'
+                        }`}
+                      >
+                        📄 原文预览
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivePreviewTab('verification')}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          activePreviewTab === 'verification'
+                            ? 'bg-amber-300 text-slate-950'
+                            : 'border border-white/10 bg-white/6 text-white/72 hover:bg-white/10'
+                        }`}
+                      >
+                        🛡️ 校验信息
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivePreviewTab('analysis')}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          activePreviewTab === 'analysis'
+                            ? 'bg-emerald-300 text-slate-950'
+                            : 'border border-white/10 bg-white/6 text-white/72 hover:bg-white/10'
+                        }`}
+                      >
+                        🧠 AI 结果
+                      </button>
+                    </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setActivePreviewTab('verification')}
-                    className={`rounded-full px-4 py-2 text-sm transition ${
-                      activePreviewTab === 'verification'
-                        ? 'bg-amber-300 text-slate-950'
-                        : 'border border-white/10 bg-white/6 text-white/72 hover:bg-white/10'
-                    }`}
-                  >
-                    🛡️ 校验信息
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActivePreviewTab('analysis')}
-                    className={`rounded-full px-4 py-2 text-sm transition ${
-                      activePreviewTab === 'analysis'
-                        ? 'bg-emerald-300 text-slate-950'
-                        : 'border border-white/10 bg-white/6 text-white/72 hover:bg-white/10'
-                    }`}
-                  >
-                    🧠 AI 结果
-                  </button>
                 </div>
               </div>
 

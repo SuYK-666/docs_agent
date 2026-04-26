@@ -75,7 +75,7 @@ function buildDenseAxis(points: ChartPoint[]): DenseAxisPayload {
   }
 
   points.forEach((point, index) => {
-    const slotKey = `task-slot-${index}`
+    const slotKey = `task-slot-${index+1}`
     categories.push(slotKey)
     labelMap[slotKey] = point.label
     lineData.push([slotKey, point.averageConfidence])
@@ -201,10 +201,20 @@ export default function MetricCharts() {
         borderColor: '#334155',
         textStyle: { color: '#e2e8f0' },
       },
+      legend: {
+        data: ['Token消耗', '平均置信度'],
+        top: 0,
+        right: 10,
+        textStyle: { color: '#cbd5e1', fontSize: 11 },
+        icon: 'circle',
+        itemWidth: 8,
+        itemHeight: 8,
+        itemGap: 16,
+      },
       grid: {
         left: '4%',
         right: '4%',
-        top: '12%',
+        top: '18%',
         bottom: '16%',
         containLabel: true,
       },
@@ -265,7 +275,7 @@ export default function MetricCharts() {
       ],
       series: [
         {
-          name: '总 Token',
+          name: 'Token消耗',
           type: 'line',
           smooth: true,
           symbol: 'none',
@@ -279,7 +289,7 @@ export default function MetricCharts() {
               { offset: 1, color: 'rgba(59, 130, 246, 0.02)' },
             ]),
           },
-          data: chartSeries.map((item, index) => [`task-slot-${index}`, item.totalTokens]),
+          data: chartSeries.map((item, index) => [`task-slot-${index+1}`, item.totalTokens]),
         },
         {
           name: '平均置信度',
@@ -319,7 +329,7 @@ export default function MetricCharts() {
         </div>
 
         <div className="relative flex min-w-0 flex-1">
-          <div className="w-full rounded-[1.75rem] border border-white/10 bg-black/18 p-4">
+          <div className="w-full rounded-[1.75rem] border border-white/5 border-t-white/15 bg-gradient-to-b from-white/[0.04] to-black/30 p-4 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(0,0,0,0.5)]">
             <div ref={chartContainerRef} className="h-[420px] w-full" />
           </div>
 
@@ -335,7 +345,11 @@ export default function MetricCharts() {
 
       <div className="grid gap-4">
         {metricCards.map((metric) => (
-          <GlassEffect key={metric.label} className="h-full rounded-[1.75rem] p-5" contentClassName="w-full">
+          <GlassEffect
+            key={metric.label}
+            className="h-full rounded-[1.75rem] border-t-2 border-t-white/10 p-5 shadow-[0_15px_35px_-10px_rgba(0,0,0,0.4),0_0_15px_-3px_rgba(6,182,212,0.05)]"
+            contentClassName="w-full"
+          >
             <div className="flex h-full min-h-[145px] flex-col justify-between gap-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm uppercase tracking-[0.16em] text-white/60">{metric.label}</p>

@@ -1,6 +1,6 @@
 import SystemSettingsModal from '@/components/SystemSettingsModal'
 import { ArrowRight, Menu, Settings2, Workflow, X } from 'lucide-react'
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { GlassEffect, GlassFilter } from './liquid-glass'
 
@@ -26,6 +26,8 @@ const statusCards = [
   ['工作台 / 终端', '审批与监控'],
 ]
 
+const cardEntranceDelays = ['delay-300', 'delay-[450ms]', 'delay-[600ms]']
+
 const NavbarHero: React.FC<NavbarHeroProps> = ({
   brandName = 'Docs Agent',
   heroTitle = '文档智能体协同中枢',
@@ -35,25 +37,33 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isLoaded, setIsLoaded] = useState(false)
   const location = useLocation()
+
+  useEffect(() => {
+    setIsLoaded(true)
+  }, [])
 
   const isCurrent = (path: string) => location.pathname === path
 
   return (
-    <main
-      className="absolute inset-0 overflow-y-auto text-white"
-      style={{
-        backgroundImage: `url("${backgroundImage}")`,
-        backgroundPosition: 'center center',
-        backgroundSize: 'cover',
-      }}
-    >
+    <main className="absolute inset-0 overflow-y-auto bg-slate-950 text-white">
       <GlassFilter />
+      <div
+        className={`fixed inset-0 bg-cover bg-center transition-transform duration-[2400ms] ease-out ${
+          isLoaded ? 'scale-100' : 'scale-105'
+        }`}
+        style={{
+          backgroundImage: `url("${backgroundImage}")`,
+        }}
+      />
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(45,212,191,0.34),transparent_28%),radial-gradient(circle_at_80%_0%,rgba(244,114,182,0.25),transparent_26%),linear-gradient(135deg,rgba(7,12,20,0.94),rgba(21,28,42,0.84)_48%,rgba(18,12,32,0.9))]" />
 
       <div className="relative z-10 mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
         <GlassEffect
-          className="z-30 items-center justify-between rounded-3xl px-4 py-3 sm:px-6"
+          className={`z-30 items-center justify-between rounded-3xl px-4 py-3 transition-all duration-700 ease-out sm:px-6 ${
+            isLoaded ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+          }`}
           contentClassName="flex w-full items-center justify-between gap-4"
         >
           <Link to="/" className="flex flex-shrink-0 items-center gap-3 text-left">
@@ -124,11 +134,33 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
 
         <section className="grid min-h-[calc(100vh-140px)] flex-1 items-center gap-8 py-6 sm:py-8 lg:grid-cols-[1.08fr_0.92fr]">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-100/80">{heroSubtitle}</p>
-            <h1 className="mt-5 text-4xl font-bold leading-tight tracking-tight text-white sm:text-6xl">{heroTitle}</h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/75">{heroDescription}</p>
+            <p
+              className={`text-sm font-semibold uppercase tracking-[0.24em] text-cyan-100/80 transition-all delay-200 duration-700 ease-out ${
+                isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'
+              }`}
+            >
+              {heroSubtitle}
+            </p>
+            <h1
+              className={`mt-5 text-4xl font-bold leading-tight tracking-tight text-white transition-all delay-100 duration-700 ease-out sm:text-6xl ${
+                isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'
+              }`}
+            >
+              {heroTitle}
+            </h1>
+            <p
+              className={`mt-6 max-w-2xl text-lg leading-8 text-white/75 transition-all delay-200 duration-700 ease-out ${
+                isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'
+              }`}
+            >
+              {heroDescription}
+            </p>
 
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div
+              className={`mt-8 flex flex-wrap gap-3 transition-all delay-300 duration-700 ease-out ${
+                isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'
+              }`}
+            >
               <Link to="/dashboard">
                 <GlassEffect className="rounded-3xl px-5 py-3 hover:scale-105">
                   <span className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -144,8 +176,14 @@ const NavbarHero: React.FC<NavbarHeroProps> = ({
           </div>
 
           <div className="grid gap-4">
-            {statusCards.map(([label, value]) => (
-              <GlassEffect key={label} className="rounded-3xl p-5" contentClassName="w-full">
+            {statusCards.map(([label, value], index) => (
+              <GlassEffect
+                key={label}
+                className={`rounded-3xl p-5 transition-all duration-700 ease-out ${cardEntranceDelays[index]} ${
+                  isLoaded ? 'translate-x-0 opacity-100' : 'translate-x-12 opacity-0'
+                }`}
+                contentClassName="w-full"
+              >
                 <div className="flex items-center justify-between gap-5">
                   <p className="text-sm text-white/60">{label}</p>
                   <p className="text-3xl font-bold text-white">{value}</p>

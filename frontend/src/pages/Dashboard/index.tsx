@@ -73,7 +73,7 @@ export default function DashboardPage({ startJob, statusData }: DashboardPagePro
                   </span>
                 </div>
 
-                <div className="rounded-[1.75rem] border border-white/10 bg-black/18 p-4">
+                <div className="w-full rounded-[1.75rem] border border-white/5 border-t-white/15 bg-gradient-to-b from-white/[0.04] to-black/30 p-4 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(0,0,0,0.5)]">
                   <AgentTopology agentsStatus={topologyStatuses} />
                 </div>
               </GlassEffect>

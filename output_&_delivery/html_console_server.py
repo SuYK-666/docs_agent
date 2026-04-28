@@ -1927,6 +1927,16 @@ def _execute_approval_job(job_id: str, modified_drafts: list[dict[str, Any]], re
 class UIConsoleHandler(BaseHTTPRequestHandler):
     server_version = "DocAgentUI/1.0"
 
+    def end_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        super().end_headers()
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self.send_response(200, "ok")
+        self.end_headers()
+
     def _set_headers(self, status: HTTPStatus = HTTPStatus.OK, content_type: str = "application/json; charset=utf-8") -> None:
         self.send_response(status.value)
         self.send_header("Content-Type", content_type)

@@ -3,6 +3,8 @@ import type { HistoryRecord, HistoryRecordFileMeta, ProcessingHistoryItem } from
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+const API_BASE = ((import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || '').replace(/\/$/, '')
+
 export type JobInputTab = 'upload' | 'paste' | 'crawl'
 export type JobMode = 'preview' | 'email'
 export type JobRuntimeStatus = 'idle' | 'uploading' | 'pending_approval' | 'success' | 'failed'
@@ -714,7 +716,7 @@ export function useJobMonitor() {
   function startStatusTracking(jobId: string) {
     closeEventSource()
 
-    const nextEventSource = new EventSource(`/api/jobs/${jobId}/events?from_seq=0`)
+    const nextEventSource = new EventSource(`${API_BASE}/api/jobs/${jobId}/events?from_seq=0`)
     eventSourceRef.current = nextEventSource
 
     nextEventSource.addEventListener('stream', (event) => {
@@ -1110,7 +1112,7 @@ export function useJobMonitor() {
     }))
 
     try {
-      const response = await fetch('/api/jobs', {
+      const response = await fetch(`${API_BASE}/api/jobs`, {
         method: 'POST',
         body: formData,
       })
@@ -1188,8 +1190,8 @@ export function useJobMonitor() {
           draft_json: draft.draft_json,
         })),
       }
-
-      const response = await fetch('/approve_task', {
+      
+      const response = await fetch(`${API_BASE}/approve_task`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

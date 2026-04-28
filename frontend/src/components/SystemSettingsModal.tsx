@@ -1,7 +1,6 @@
-import { useTheme } from '@/components/next/next-themes'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useGlobalAppContext } from '@/context/GlobalAppContext'
-import { KeyRound, Moon, ServerCog, Sun } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, ServerCog } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 export const SETTINGS_UPDATED_EVENT = 'docs-agent-settings-updated'
@@ -12,35 +11,35 @@ interface SystemSettingsModalProps {
 }
 
 const providerOptions = [
-  { value: 'deepseek', label: 'DeepSeek (V3)' },
-  { value: 'tongyi', label: '通义 (Qwen-Max)' },
-  { value: 'wenxin', label: '文心 (Ernie-4.0)' },
-  { value: 'doubao', label: '豆包 AI (Pro-32k)' },
-  { value: 'kimi', label: 'Kimi (Moonshot-8k)' },
-  { value: 'zhipu', label: '智谱 AI (GLM-4-Flash)' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'tongyi', label: '通义' },
+  { value: 'wenxin', label: '文心' },
+  { value: 'doubao', label: '豆包' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'zhipu', label: '智谱' },
 ]
 
 export default function SystemSettingsModal({ open, onOpenChange }: SystemSettingsModalProps) {
   const { formState, setFormState } = useGlobalAppContext()
-  const { resolvedTheme, setTheme, theme } = useTheme()
   const [provider, setProvider] = useState('tongyi')
+  const [modelName, setModelName] = useState('')
   const [apiKey, setApiKey] = useState('')
-  const [selectedTheme, setSelectedTheme] = useState<'dark' | 'light'>('dark')
+  const [isApiKeyVisible, setIsApiKeyVisible] = useState(false)
 
   useEffect(() => {
     if (!open) return
 
-    const savedTheme = window.localStorage.getItem('docs_agent_theme')
-    const currentTheme = savedTheme || resolvedTheme || theme || 'dark'
-
     setProvider(formState.provider || window.localStorage.getItem('docs_agent_ui_provider') || 'tongyi')
+    setModelName(window.localStorage.getItem('docs_agent_ui_model') || '')
     setApiKey(formState.apiKey || window.localStorage.getItem('docs_agent_ui_api_key') || '')
-    setSelectedTheme(currentTheme === 'light' ? 'light' : 'dark')
-  }, [formState.apiKey, formState.provider, open, resolvedTheme, theme])
+    setIsApiKeyVisible(false)
+  }, [formState.apiKey, formState.provider, open])
 
   const handleSave = () => {
-    window.localStorage.setItem('docs_agent_theme', selectedTheme)
+    const normalizedModelName = modelName.trim()
+
     window.localStorage.setItem('docs_agent_ui_provider', provider)
+    window.localStorage.setItem('docs_agent_ui_model', normalizedModelName)
     window.localStorage.setItem('docs_agent_ui_api_key', apiKey)
     setFormState((current) => ({
       ...current,
@@ -48,7 +47,6 @@ export default function SystemSettingsModal({ open, onOpenChange }: SystemSettin
       apiKey,
     }))
     window.dispatchEvent(new Event(SETTINGS_UPDATED_EVENT))
-    setTheme(selectedTheme)
     onOpenChange(false)
   }
 
@@ -84,48 +82,44 @@ export default function SystemSettingsModal({ open, onOpenChange }: SystemSettin
           </section>
 
           <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">安全密钥</span>
-              <div className="flex items-center gap-3 rounded-[1.2rem] border border-white/10 bg-black/20 px-4 py-3">
-                <KeyRound className="h-4 w-4 text-cyan-100" />
+            <div className="grid gap-4">
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">模型型号</span>
                 <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder="输入调用密钥"
-                  className="w-full bg-transparent text-sm text-white placeholder:text-white/35 outline-none"
+                  value={modelName}
+                  onChange={(event) => setModelName(event.target.value)}
+                  placeholder="例如：qwen-max (留空则自动使用系统预设最优模型)"
+                  className="rounded-[1.2rem] border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder:text-white/35 outline-none transition focus:border-cyan-300/35"
                 />
-              </div>
-            </label>
-          </section>
+                {!modelName.trim() && (
+                  <span className="text-xs text-white/40">当前将使用 {provider} 的默认预设型号</span>
+                )}
+              </label>
 
-          <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">界面主题</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 rounded-[1.2rem] border border-white/10 bg-black/20 p-1.5">
-                <button
-                  type="button"
-                  onClick={() => setSelectedTheme('dark')}
-                  className={`inline-flex items-center justify-center gap-2 rounded-[0.95rem] px-4 py-2.5 text-sm font-medium transition ${
-                    selectedTheme === 'dark' ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/8 hover:text-white'
-                  }`}
-                >
-                  <Moon className="h-4 w-4" />
-                  深色
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTheme('light')}
-                  className={`inline-flex items-center justify-center gap-2 rounded-[0.95rem] px-4 py-2.5 text-sm font-medium transition ${
-                    selectedTheme === 'light' ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/8 hover:text-white'
-                  }`}
-                >
-                  <Sun className="h-4 w-4" />
-                  浅色
-                </button>
+              <div className="grid gap-2">
+                <label className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55" htmlFor="system-api-key">
+                  安全密钥
+                </label>
+                <div className="flex items-center gap-3 rounded-[1.2rem] border border-white/10 bg-black/20 px-4 py-3">
+                  <KeyRound className="h-4 w-4 text-cyan-100" />
+                  <input
+                    id="system-api-key"
+                    type={isApiKeyVisible ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder="输入调用密钥"
+                    className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-white/35 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsApiKeyVisible((current) => !current)}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+                    aria-label={isApiKeyVisible ? '隐藏 API Key' : '显示 API Key'}
+                    aria-pressed={isApiKeyVisible}
+                  >
+                    {isApiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             </div>
           </section>

@@ -161,6 +161,95 @@ def _first_non_empty(*values: Any, fallback: str = "") -> str:
 	return fallback
 
 
+VISION_MODEL_HINTS = ("vl", "vision", "4v", "multimodal", "omni","qvq")
+
+
+def _looks_like_vision_model(model: str) -> bool:
+	text = str(model or "").strip().lower()
+	if not text:
+		return False
+	return any(hint in text for hint in VISION_MODEL_HINTS)
+
+
+def _get_or_create_mapping(root: dict[str, Any], key: str) -> dict[str, Any]:
+	value = root.get(key)
+	if isinstance(value, dict):
+		return value
+	next_value: dict[str, Any] = {}
+	root[key] = next_value
+	return next_value
+
+
+def _resolve_configured_vlm_model(vlm_cfg: Mapping[str, Any], provider_cfg: Mapping[str, Any]) -> str:
+	return _first_non_empty(provider_cfg.get("model"), vlm_cfg.get("default_model"))
+
+
+def _configure_vlm_for_model_override(
+	settings: Mapping[str, Any],
+	provider: str,
+	final_model: str,
+	*,
+	model_was_overridden: bool,
+	logger: Any,
+) -> None:
+	if not model_was_overridden or not final_model:
+		return
+	if not isinstance(settings, dict):
+		return
+
+	try:
+		ingestion_cfg = _get_or_create_mapping(settings, "ingestion")
+		vlm_cfg = _get_or_create_mapping(ingestion_cfg, "vlm_assist")
+		providers_cfg = _get_or_create_mapping(vlm_cfg, "providers")
+		provider_cfg_raw = providers_cfg.get(provider)
+		provider_cfg = dict(provider_cfg_raw) if isinstance(provider_cfg_raw, Mapping) else {}
+		configured_default = _resolve_configured_vlm_model(vlm_cfg, provider_cfg)
+
+		selected_vlm_model = ""
+		reason = ""
+		if provider == "tongyi" and not _looks_like_vision_model(final_model):
+			lower_model = final_model.lower()
+			if "qwen-" in lower_model:
+				index = lower_model.find("qwen-")
+				selected_vlm_model = f"{final_model[:index]}qwen-vl-{final_model[index + len('qwen-'):]}"
+				reason = "translated_qwen_to_qwen_vl"
+			else:
+				selected_vlm_model = configured_default
+				reason = "fallback_to_configured_vlm_model"
+		elif provider in {"wenxin", "zhipu"} and not _looks_like_vision_model(final_model):
+			selected_vlm_model = configured_default
+			reason = "fallback_to_configured_vlm_model"
+		elif _looks_like_vision_model(final_model):
+			selected_vlm_model = final_model
+			reason = "custom_model_is_vision_capable"
+		else:
+			selected_vlm_model = configured_default
+			reason = "fallback_to_configured_vlm_model"
+
+		if selected_vlm_model:
+			provider_cfg["model"] = selected_vlm_model
+			provider_cfg.pop("enabled", None)
+			providers_cfg[provider] = provider_cfg
+			logger.info(
+				"VLM model resolved for provider=%s main_model=%s vlm_model=%s reason=%s",
+				provider,
+				final_model,
+				selected_vlm_model,
+				reason,
+			)
+			return
+
+		provider_cfg["enabled"] = False
+		providers_cfg[provider] = provider_cfg
+		logger.warning(
+			"VLM assist skipped for provider=%s main_model=%s: no configured or translatable vision model",
+			provider,
+			final_model,
+		)
+	except Exception as exc:  # pylint: disable=broad-except
+		logger.warning("VLM assist skipped after model override resolution failed: %s", exc)
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
 	try:
 		return int(float(value))
@@ -225,7 +314,7 @@ def resolve_input_doc(file_arg: str | None, settings: Mapping[str, Any]) -> Path
 	return docs[0]
 
 
-def build_client(settings: Mapping[str, Any]) -> DeepSeekClient:
+def build_client(settings: Mapping[str, Any], model_name: str | None = None) -> DeepSeekClient:
 	logger = get_logger("main")
 	deepseek_settings = _mapping(settings.get("deepseek"))
 	llm_settings = _mapping(settings.get("llm"))
@@ -233,8 +322,12 @@ def build_client(settings: Mapping[str, Any]) -> DeepSeekClient:
 
 	raw_provider = _first_non_empty(llm_settings.get("provider"), deepseek_settings.get("provider"), fallback="deepseek")
 	provider = _normalize_provider(raw_provider)
-	provider_defaults = LLM_PROVIDER_PRESETS.get(provider, LLM_PROVIDER_PRESETS["deepseek"])
+	preset = LLM_PROVIDER_PRESETS.get(provider)
+	if preset is None:
+		raise ValueError(f"Unsupported LLM provider: {provider}")
+	provider_defaults = preset
 	provider_cfg = _mapping(provider_settings.get(provider))
+	override_model = str(model_name or "").strip()
 
 	base_url = _first_non_empty(
 		provider_cfg.get("base_url"),
@@ -243,12 +336,21 @@ def build_client(settings: Mapping[str, Any]) -> DeepSeekClient:
 		provider_defaults.get("base_url"),
 		fallback="https://api.deepseek.com",
 	)
-	model = _first_non_empty(
+	configured_model = _first_non_empty(
 		provider_cfg.get("model"),
 		llm_settings.get("model"),
 		deepseek_settings.get("model"),
+		provider_defaults.get("default_model"),
 		provider_defaults.get("model"),
 		fallback="deepseek-chat",
+	)
+	model = override_model if override_model else configured_model
+	_configure_vlm_for_model_override(
+		settings,
+		provider,
+		model,
+		model_was_overridden=bool(override_model),
+		logger=logger,
 	)
 	api_key = _first_non_empty(
 		provider_cfg.get("api_key"),
@@ -311,6 +413,12 @@ def build_client(settings: Mapping[str, Any]) -> DeepSeekClient:
 			),
 		)
 	)
+	# 👇 新增：智能拦截推理模型！一旦发现是深度思考模型，强制关闭 JSON 模式，防止 API 报错死锁
+	if any(tag in model.lower() for tag in ("qvq", "qwq", "r1", "o1", "deepthink")):
+		request_json_mode = False
+		logger.info(f"Reasoning model '{model}' detected. Forced request_json_mode to False.")
+
+
 	chat_completions_path = _first_non_empty(
 		provider_cfg.get("chat_completions_path"),
 		llm_settings.get("chat_completions_path"),

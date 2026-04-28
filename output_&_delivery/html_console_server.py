@@ -81,6 +81,7 @@ STREAM_STRUCTURAL_NOISE_RE = re.compile(r'^[\s{}\[\]":,]+$')
 DEFAULT_UI_PORT = 1708
 
 SUPPORTED_LLM_PROVIDERS = set(LLM_PROVIDER_PRESETS.keys())
+UI_LLM_PROVIDERS = {"deepseek", "tongyi", "wenxin", "doubao", "kimi", "zhipu"}
 SUPPORTED_EMAIL_FILE_TYPES = {"md", "html", "docx", "ics"}
 DEFAULT_EMAIL_FILE_TYPES = ["md", "html", "docx", "ics"]
 SUPPORTED_REPORT_LAYOUT = {"separate", "bundle"}
@@ -171,6 +172,7 @@ class JobState:
     job_id: str
     mode: str
     llm_provider: str
+    llm_model: str
     email_file_types: list[str]
     report_layouts: dict[str, str]
     api_key: str
@@ -477,6 +479,7 @@ def _build_job_payload(job: JobState) -> dict[str, Any]:
         "job_id": job.job_id,
         "status": job.status,
         "llm_provider": job.llm_provider,
+        "llm_model": job.llm_model,
         "email_file_types": list(job.email_file_types),
         "report_layouts": dict(job.report_layouts),
         "recipient_emails": list(job.recipient_emails),
@@ -509,12 +512,28 @@ def _normalize_llm_provider(raw_provider: str) -> str:
     return candidate if candidate in SUPPORTED_LLM_PROVIDERS else "deepseek"
 
 
-def _build_settings_for_job(api_key: str, llm_provider: str, job_root: Path) -> dict[str, Any]:
+def _resolve_requested_llm_provider(raw_provider: str) -> str:
+    key = str(raw_provider).strip()
+    candidate = LLM_PROVIDER_ALIASES.get(key.lower(), key.lower()) if key else "deepseek"
+    if candidate not in UI_LLM_PROVIDERS or candidate not in LLM_PROVIDER_PRESETS:
+        raise ValueError(f"unsupported llm_provider: {raw_provider}")
+    return candidate
+
+
+def _normalize_model_name(raw_model: Any) -> str:
+    model_name = str(raw_model or "").strip()
+    if re.search(r"[\r\n;]", model_name):
+        return ""
+    return model_name
+
+
+def _build_settings_for_job(api_key: str, llm_provider: str, job_root: Path, model_name: str = "") -> dict[str, Any]:
     settings_path = PROJECT_ROOT / "config" / "settings.yaml"
     settings = load_settings(settings_path)
     settings = copy.deepcopy(settings)
 
-    provider = _normalize_llm_provider(llm_provider)
+    provider = _resolve_requested_llm_provider(llm_provider)
+    normalized_model = _normalize_model_name(model_name)
 
     llm_cfg = settings.setdefault("llm", {})
     llm_cfg["provider"] = provider
@@ -523,6 +542,8 @@ def _build_settings_for_job(api_key: str, llm_provider: str, job_root: Path) -> 
     provider_cfg = dict(provider_cfg)
     provider_cfg["api_key"] = api_key.strip()
     provider_cfg["api_key_env"] = ""
+    if normalized_model:
+        provider_cfg["model"] = normalized_model
     providers_cfg[provider] = provider_cfg
 
     deepseek_cfg = settings.setdefault("deepseek", {})
@@ -609,14 +630,48 @@ def _resolve_ocr_workers(settings: Mapping[str, Any], source_count: int) -> int:
     return max(1, min(source_count, max(1, requested)))
 
 
-def _build_draft_payload(draft_token: str, source_file: Path, cache_path: Path, draft_output: Mapping[str, Any]) -> dict[str, Any]:
-    # 👇 1. 从根节点提取真实的质检总分和评价
+def _first_non_empty_value(*values: Any) -> Any:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _extract_critic_fields(draft_output: Mapping[str, Any]) -> tuple[Any, str]:
     critic_eval = draft_output.get("critic_evaluation", {})
-    if not isinstance(critic_eval, dict):
+    if not isinstance(critic_eval, Mapping):
         critic_eval = {}
-        
-    real_score = critic_eval.get("total_score")
-    real_feedback = critic_eval.get("critic_feedback", "")
+
+    pipeline_meta = draft_output.get("pipeline_meta", {})
+    if not isinstance(pipeline_meta, Mapping):
+        pipeline_meta = {}
+
+    critic_dimensions = pipeline_meta.get("critic_dimensions", {})
+    if not isinstance(critic_dimensions, Mapping):
+        critic_dimensions = {}
+
+    real_score = _first_non_empty_value(
+        critic_eval.get("total_score"),
+        critic_eval.get("critic_final_score"),
+        pipeline_meta.get("critic_final_score"),
+        critic_dimensions.get("total_score"),
+    )
+    real_feedback = str(
+        _first_non_empty_value(
+            critic_eval.get("critic_feedback"),
+            critic_eval.get("feedback"),
+            pipeline_meta.get("critic_feedback"),
+        )
+        or ""
+    )
+    return real_score, real_feedback
+
+
+def _build_draft_payload(draft_token: str, source_file: Path, cache_path: Path, draft_output: Mapping[str, Any]) -> dict[str, Any]:
+    real_score, real_feedback = _extract_critic_fields(draft_output)
 
     tasks_raw = draft_output.get("tasks", []) if isinstance(draft_output.get("tasks"), list) else []
     tasks_payload: list[dict[str, Any]] = []
@@ -630,7 +685,6 @@ def _build_draft_payload(draft_token: str, source_file: Path, cache_path: Path, 
                 "owner": str(item.get("owner", "")).strip(),
                 "deadline": str(item.get("deadline", "")).strip(),
                 "deadline_display": str(item.get("deadline_display", "")).strip(),
-                # 👇 2. 把真实的打分和评价硬塞给前端需要的字段
                 "score": real_score,
                 "criticFeedback": real_feedback,
             }
@@ -806,6 +860,7 @@ async def _process_job_async(
     job_id: str,
     api_key: str,
     llm_provider: str,
+    model_name: str,
     report_layouts: dict[str, str],
     mode: str,
     source_files: list[Path],
@@ -835,7 +890,15 @@ async def _process_job_async(
         for folder in (cache_dir, final_reports_dir, report_dir):
             folder.mkdir(parents=True, exist_ok=True)
 
-        settings = _build_settings_for_job(api_key=api_key, llm_provider=llm_provider, job_root=job_root)
+        if llm_provider not in LLM_PROVIDER_PRESETS:
+            raise ValueError(f"unsupported llm_provider: {llm_provider}")
+
+        settings = _build_settings_for_job(
+            api_key=api_key,
+            llm_provider=llm_provider,
+            job_root=job_root,
+            model_name=model_name,
+        )
 
         warmup_status, warmup_detail = _get_rag_warmup_state()
         if warmup_status == "running":
@@ -925,7 +988,7 @@ async def _process_job_async(
             file_percent=6,
             step_detail="正在初始化编排器与检索引擎...",
         )
-        shared_draft_client = build_client(settings)
+        shared_draft_client = build_client(settings, model_name=model_name)
         draft_orchestrator_worker = Orchestrator(client=shared_draft_client, settings=settings, project_root=PROJECT_ROOT)
         ocr_worker_count = _resolve_ocr_workers(settings=settings, source_count=total_sources)
         ocr_limit = asyncio.Semaphore(ocr_worker_count)
@@ -1528,6 +1591,7 @@ def _process_job(
     job_id: str,
     api_key: str,
     llm_provider: str,
+    model_name: str,
     email_file_types: list[str],
     report_layouts: dict[str, str],
     mode: str,
@@ -1543,6 +1607,7 @@ def _process_job(
                 job_id=job_id,
                 api_key=api_key,
                 llm_provider=llm_provider,
+                model_name=model_name,
                 report_layouts=report_layouts,
                 mode=mode,
                 source_files=source_files,
@@ -1750,8 +1815,9 @@ async def _execute_approval_job_async(job_id: str, modified_drafts: list[dict[st
             api_key=current_job.api_key,
             llm_provider=current_job.llm_provider,
             job_root=job_root,
+            model_name=current_job.llm_model,
         )
-        shared_approval_client = build_client(settings)
+        shared_approval_client = build_client(settings, model_name=current_job.llm_model)
         approval_orchestrator_worker = Orchestrator(client=shared_approval_client, settings=settings, project_root=PROJECT_ROOT)
 
         reports: list[dict[str, Any]] = []
@@ -1987,7 +2053,18 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
         )
 
         api_key = str(form.getfirst("api_key", "")).strip()
-        llm_provider = _normalize_llm_provider(str(form.getfirst("llm_provider", "deepseek")))
+        try:
+            llm_provider = _resolve_requested_llm_provider(str(form.getfirst("llm_provider", "deepseek")))
+        except ValueError as exc:
+            self._send_json(
+                {
+                    "error": str(exc),
+                    "error_code": "unsupported_llm_provider",
+                },
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        model_name = _normalize_model_name(form.getfirst("model", ""))
         mode = str(form.getfirst("mode", "preview")).strip().lower()
         input_tab = str(form.getfirst("input_tab", "upload")).strip().lower()
         if input_tab not in {"upload", "paste", "crawl"}:
@@ -2065,6 +2142,7 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
             job_id=job_id,
             mode=mode,
             llm_provider=llm_provider,
+            llm_model=model_name,
             email_file_types=email_file_types,
             report_layouts=report_layouts,
             api_key=api_key,
@@ -2080,6 +2158,7 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
                 job_id,
                 api_key,
                 llm_provider,
+                model_name,
                 email_file_types,
                 report_layouts,
                 mode,
@@ -2103,6 +2182,7 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
                 "status": job.status,
                 "message": job.message,
                 "llm_provider": llm_provider,
+                "llm_model": model_name,
                 "email_file_types": email_file_types,
                 "report_layouts": report_layouts,
                 "input_tab": input_tab,

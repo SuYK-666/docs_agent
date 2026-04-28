@@ -20,6 +20,7 @@ export type UploadSourceFile =
 export interface StartJobOptions {
   provider: string
   apiKey: string
+  model?: string
   mode: JobMode | string
   inputTab: JobInputTab | string
   emailTypes: string[]
@@ -105,6 +106,7 @@ const STREAM_STRUCTURAL_NOISE_RE = /^[\s{}\[\]":,<>\\/]+$/
 
 type ActiveJobOptionsSnapshot = {
   inputTab: string
+  model?: string
   pastedText?: string
   crawlCount?: number
   crawlUrl?: string
@@ -1061,8 +1063,12 @@ export function useJobMonitor() {
     }
 
     const nextFileMetrics = buildInitialMetrics(seedFileNames)
+    const rawModelName = String(options.model ?? window.localStorage.getItem('docs_agent_ui_model') ?? '').trim()
+    const modelName = /[\r\n;]/.test(rawModelName) ? '' : rawModelName
+
     activeJobOptionsRef.current = {
       inputTab: options.inputTab,
+      model: modelName,
       pastedText: options.pastedText,
       crawlCount: options.crawlCount,
       crawlUrl: options.crawlUrl,
@@ -1072,6 +1078,7 @@ export function useJobMonitor() {
     const formData = new FormData()
     formData.append('llm_provider', options.provider)
     formData.append('api_key', options.apiKey)
+    formData.append('model', modelName)
     formData.append('mode', options.mode)
     formData.append('input_tab', options.inputTab)
     formData.append('email_file_types', options.emailTypes.join(','))

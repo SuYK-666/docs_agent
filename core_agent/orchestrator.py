@@ -502,6 +502,10 @@ class Orchestrator:
 			"critic_dimensions": critic_dimensions,
 			"critic_feedback": str(critic_result.get("feedback", "")) if isinstance(critic_result, Mapping) else "",
 		}
+		final_output["critic_evaluation"] = {
+			**critic_dimensions,
+			"critic_feedback": final_output["pipeline_meta"]["critic_feedback"],
+		}
 		if low_confidence_warning:
 			final_output["warning"] = low_confidence_warning
 		self.logger.info(

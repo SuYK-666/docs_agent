@@ -553,8 +553,8 @@ function buildHistoryRecord(params: {
 
     if (avgScore >= 90) {
       // 优秀：高命中、高置信
-      hitRate = randomFloat(88, 98, 1)
-      confidence = randomFloat(0.92, 0.99, 2)
+      hitRate = randomFloat(88, 96, 1)
+      confidence = randomFloat(0.92, 0.96, 2)
     } else if (avgScore >= 80) {
       // 良好：命中尚可、置信度中高
       hitRate = randomFloat(75, 88, 1)

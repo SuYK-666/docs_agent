@@ -27,7 +27,7 @@ jobs:
           output: contributors.svg
 
       - name: Commit & Push changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update contributors.svg"
           file_pattern: 'contributors.svg'

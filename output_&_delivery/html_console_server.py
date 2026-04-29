@@ -36,7 +36,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.logger_setup import get_log_session, get_logger, log_step, setup_logger, to_relative_path
 from core_agent.orchestrator import Orchestrator
-from main import LLM_PROVIDER_ALIASES, LLM_PROVIDER_PRESETS, build_client, load_settings, save_cache
+from main import LLM_MODEL_PRESETS, LLM_PROVIDER_ALIASES, LLM_PROVIDER_PRESETS, build_client, load_settings, save_cache
 
 import email_gateway
 import report_renderer
@@ -527,6 +527,39 @@ def _normalize_model_name(raw_model: Any) -> str:
     return model_name
 
 
+def _get_provider_default_model(provider: str) -> str:
+    preset = LLM_PROVIDER_PRESETS.get(provider, {})
+    return str(preset.get("default_model") or preset.get("model") or "").strip()
+
+
+def _build_llm_models_payload() -> dict[str, Any]:
+    providers: list[dict[str, Any]] = []
+    for provider in sorted(UI_LLM_PROVIDERS):
+        preset = LLM_PROVIDER_PRESETS.get(provider, {})
+        if not preset:
+            continue
+        models = [dict(item) for item in LLM_MODEL_PRESETS.get(provider, [])]
+        default_model = _get_provider_default_model(provider)
+        if default_model and not any(str(item.get("value", "")).strip() == default_model for item in models):
+            models.insert(0, {"value": default_model, "label": default_model, "recommended": True})
+        providers.append(
+            {
+                "value": provider,
+                "label": str(preset.get("display_name") or provider),
+                "defaultModel": default_model,
+                "models": models,
+                "supportsCustomModel": True,
+            }
+        )
+    return {
+        "providers": providers,
+        "notes": {
+            "customModel": "如果账号使用企业专属模型、区域模型或火山方舟 ep- 接入点，请填写自定义模型并用测试连接确认。",
+            "test": "测试连接会发起一次小请求，用于确认 API Key、模型名和 JSON 兼容性。",
+        },
+    }
+
+
 def _build_settings_for_job(api_key: str, llm_provider: str, job_root: Path, model_name: str = "") -> dict[str, Any]:
     settings_path = PROJECT_ROOT / "config" / "settings.yaml"
     settings = load_settings(settings_path)
@@ -777,6 +810,57 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("JSON payload must be an object")
     return payload
+
+
+async def _run_llm_connection_test(api_key: str, provider: str, model_name: str) -> dict[str, Any]:
+    settings = _build_settings_for_job(
+        api_key=api_key,
+        llm_provider=provider,
+        job_root=UI_JOB_ROOT / "_llm_test",
+        model_name=model_name,
+    )
+    client = build_client(settings, model_name=model_name)
+    response = await client.chat_completion(
+        messages=[
+            {
+                "role": "system",
+                "content": "Return a tiny JSON object only.",
+            },
+            {
+                "role": "user",
+                "content": '{"ping":"ok"}',
+            },
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+        max_tokens=32,
+    )
+    content = client.get_message_content(response)
+    return {
+        "provider": provider,
+        "model": client.config.model,
+        "endpoint": client.endpoint,
+        "jsonMode": client.config.request_json_mode,
+        "sample": content[:120],
+    }
+
+
+def _classify_llm_test_error(error: Exception) -> tuple[str, str]:
+    text = str(error)
+    lower = text.lower()
+    if "401" in lower or "unauthorized" in lower or "invalid api key" in lower:
+        return "auth_failed", "API Key 无效或认证失败。"
+    if "403" in lower or "forbidden" in lower or "permission" in lower:
+        return "permission_denied", "API Key 没有调用该模型的权限。"
+    if "404" in lower or "model_not_found" in lower or "not found" in lower:
+        return "model_not_found", "模型名不可用，或当前账号/区域没有开通该模型。"
+    if "response_format" in lower or "json_object" in lower:
+        return "response_format_unsupported", "该模型可能不支持 JSON response_format，请改用兼容模型或自定义模型。"
+    if "429" in lower or "rate limit" in lower or "too many requests" in lower:
+        return "rate_limited", "请求被限流，请稍后重试或检查额度。"
+    if "timeout" in lower or "timed out" in lower:
+        return "timeout", "请求超时，请检查网络、厂商服务状态或模型可用性。"
+    return "request_failed", f"测试请求失败：{text[:300]}"
 
 
 def _normalize_paste_filename(raw_name: str, index: int) -> str:
@@ -2392,6 +2476,53 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
     def _handle_health(self) -> None:
         self._send_json({"status": "ok", "time": datetime.now().isoformat(timespec="seconds")})
 
+    def _handle_llm_models(self) -> None:
+        self._send_json(_build_llm_models_payload())
+
+    def _handle_llm_test(self) -> None:
+        try:
+            payload = _read_json_body(self)
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc), "error_code": "invalid_payload"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        api_key = str(payload.get("api_key", "")).strip()
+        if not api_key:
+            self._send_json({"ok": False, "error": "api_key is required", "error_code": "missing_api_key"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            provider = _resolve_requested_llm_provider(str(payload.get("provider", "deepseek")))
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc), "error_code": "unsupported_llm_provider"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        model_name = _normalize_model_name(payload.get("model", ""))
+        try:
+            result = asyncio.run(_run_llm_connection_test(api_key=api_key, provider=provider, model_name=model_name))
+        except Exception as exc:  # pylint: disable=broad-except
+            error_code, message = _classify_llm_test_error(exc)
+            self._send_json(
+                {
+                    "ok": False,
+                    "provider": provider,
+                    "model": model_name or _get_provider_default_model(provider),
+                    "error": message,
+                    "error_code": error_code,
+                    "detail": str(exc)[:500],
+                },
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        self._send_json(
+            {
+                "ok": True,
+                "message": "模型连接测试通过。",
+                **result,
+            }
+        )
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
@@ -2407,6 +2538,10 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             self._handle_health()
+            return
+
+        if path == "/api/llm/models":
+            self._handle_llm_models()
             return
 
         if path.startswith("/api/jobs/"):
@@ -2449,6 +2584,10 @@ class UIConsoleHandler(BaseHTTPRequestHandler):
 
         if path == "/api/jobs":
             self._handle_create_job()
+            return
+
+        if path == "/api/llm/test":
+            self._handle_llm_test()
             return
 
         if path in {"/approve_task", "/api/approve_task"}:

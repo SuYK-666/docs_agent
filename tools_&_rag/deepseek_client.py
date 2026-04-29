@@ -108,7 +108,7 @@ class DeepSeekClient:
 			"stream": effective_stream,
 		}
 
-		if response_format is not None:
+		if response_format is not None and self.config.request_json_mode:
 			payload["response_format"] = dict(response_format)
 		elif self.config.request_json_mode:
 			payload["response_format"] = {"type": "json_object"}

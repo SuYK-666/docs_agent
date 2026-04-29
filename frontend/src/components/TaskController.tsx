@@ -116,6 +116,7 @@ export default function TaskController({ startJob, statusData, className = '' }:
   const handleStartJob = async () => {
     const provider = formState.provider || window.localStorage.getItem('docs_agent_ui_provider') || 'tongyi'
     const apiKey = formState.apiKey || window.localStorage.getItem('docs_agent_ui_api_key') || ''
+    const model = window.localStorage.getItem('docs_agent_ui_model') || ''
 
     if (fileList.length > 0 && (!formState.inputTab || formState.inputTab === 'upload')) {
       setCurrentSelectedFile(fileList[0]?.name || '')
@@ -124,6 +125,7 @@ export default function TaskController({ startJob, statusData, className = '' }:
     await startJob({
       provider,
       apiKey,
+      model,
       mode: formState.mode,
       inputTab: formState.inputTab,
       emailTypes: formState.emailTypes,

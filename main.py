@@ -111,7 +111,7 @@ LLM_PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
 	"zhipu": {
 		"display_name": "智谱AI",
 		"base_url": "https://open.bigmodel.cn/api/paas/v4",
-		"model": "glm-4-flash",
+		"model": "GLM-4-Flash-250414",
 		"api_key_env": "ZHIPU_API_KEY",
 		"chat_completions_path": "/chat/completions",
 		"request_json_mode": True,
@@ -146,6 +146,45 @@ LLM_PROVIDER_ALIASES = {
 	"智谱ai": "zhipu",
 	"智谱": "zhipu",
 	"zhipu": "zhipu",
+}
+
+
+LLM_MODEL_PRESETS: dict[str, list[dict[str, Any]]] = {
+	"deepseek": [
+		{"value": "deepseek-chat", "label": "deepseek-chat（兼容默认）", "recommended": True},
+		{"value": "deepseek-reasoner", "label": "deepseek-reasoner（推理模型）"},
+		{"value": "deepseek-v4-flash", "label": "DeepSeek V4 Flash"},
+		{"value": "deepseek-v4-pro", "label": "DeepSeek V4 Pro"},
+	],
+	"tongyi": [
+		{"value": "qwen-max", "label": "Qwen Max", "recommended": True},
+		{"value": "qwen-plus", "label": "Qwen Plus"},
+		{"value": "qwen3-max", "label": "Qwen3 Max"},
+		{"value": "qwen3.6-plus", "label": "Qwen3.6 Plus"},
+	],
+	"wenxin": [
+		{"value": "ernie-4.5-turbo-128k", "label": "ERNIE 4.5 Turbo 128K"},
+		{"value": "ernie-4.5-turbo-32k", "label": "ERNIE 4.5 Turbo 32K"},
+		{"value": "ernie-4.0-turbo-8k", "label": "ERNIE 4.0 Turbo 8K（兼容旧配置）", "recommended": True},
+	],
+	"doubao": [
+		{"value": "doubao-pro-32k", "label": "Doubao Pro 32K（公共接入点/兼容旧配置）", "recommended": True},
+		{"value": "doubao-lite-32k", "label": "Doubao Lite 32K（公共接入点）"},
+		{"value": "doubao-seed-1-6-251015", "label": "Doubao Seed 1.6 251015"},
+		{"value": "doubao-seed-1-6-flash-250828", "label": "Doubao Seed 1.6 Flash 250828"},
+	],
+	"kimi": [
+		{"value": "kimi-k2.6", "label": "Kimi K2.6"},
+		{"value": "kimi-k2.5", "label": "Kimi K2.5"},
+		{"value": "moonshot-v1-32k", "label": "Moonshot V1 32K"},
+		{"value": "moonshot-v1-8k", "label": "Moonshot V1 8K", "recommended": True},
+	],
+	"zhipu": [
+		{"value": "GLM-4-Flash-250414", "label": "GLM-4-Flash-250414", "recommended": True},
+		{"value": "GLM-4-FlashX-250414", "label": "GLM-4-FlashX-250414"},
+		{"value": "GLM-4-Air-250414", "label": "GLM-4-Air-250414"},
+		{"value": "GLM-4-Plus", "label": "GLM-4-Plus"},
+	],
 }
 
 
@@ -414,7 +453,7 @@ def build_client(settings: Mapping[str, Any], model_name: str | None = None) -> 
 		)
 	)
 	# 👇 新增：智能拦截推理模型！一旦发现是深度思考模型，强制关闭 JSON 模式，防止 API 报错死锁
-	if any(tag in model.lower() for tag in ("qvq", "qwq", "r1", "o1", "deepthink")):
+	if any(tag in model.lower() for tag in ("qvq", "qwq", "r1", "o1", "deepthink", "reasoner")):
 		request_json_mode = False
 		logger.info(f"Reasoning model '{model}' detected. Forced request_json_mode to False.")
 

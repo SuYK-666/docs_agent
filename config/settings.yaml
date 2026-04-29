@@ -134,9 +134,9 @@ email:
   enabled: true
   smtp_server: "smtp.qq.com"
   smtp_port: 465
-  sender_email: "web_dev_test01@163.com"
+  sender_email: "1774006384@qq.com"
   sender_name: "公文速阅智能体"
-  auth_code: "DEVtest123654"
+  auth_code: "xdtjungwkcjrbbdf"
   timeout_seconds: 30
 
 contacts:

@@ -15,6 +15,8 @@ export default defineConfig({
     },
   },
   server: {
+    host: '0.0.0.0', // 允许局域网访问
+    allowedHosts: true, // 👈 加上这一行！允许所有内网穿透的外部域名访问
     proxy: {
       // 将所有 /api 开头的请求代理到 Python 后端
       '/api': {
